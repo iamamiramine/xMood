@@ -1,0 +1,3 @@
+[submodule "pretty-midi"]
+	path = src/utils/pretty_midi
+	url = https://github.com/iamamiramine/pretty-midi.git

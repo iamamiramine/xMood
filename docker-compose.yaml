@@ -1,0 +1,27 @@
+version: '2.3'
+
+services:
+  pa-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pa-ai
+    container_name: pa-ai-container
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"
+      MKL_SERVICE_FORCE_INTEL: "1"
+      TORCH_USE_CUDA_DSA: "1"
+      CUDA_LAUNCH_BLOCKING: "1"
+    ports:
+      - "8000:80"
+    volumes:
+      - ./datasets:/app/datasets
+      - ./output:/app/output
+      - ./shared:/app/shared
+    runtime: nvidia
+    networks:
+      - pa-ai-network
+
+networks:
+  pa-ai-network:
+    external: true
