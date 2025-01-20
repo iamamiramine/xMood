@@ -25,7 +25,7 @@ def represent_encoding(parameters: RepresentationParameters) -> dict:
         bar_token_mask,
         max_bars_per_context,
         max_contexts_per_file,
-        load_desc
+        load_symb
         load_latent,
 
     Returns:

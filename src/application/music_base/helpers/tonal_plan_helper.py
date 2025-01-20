@@ -360,48 +360,48 @@ def reconstruct_optimal_path(D, proximity_costs, num_beats, num_keys):
 def detect_modulation_points(D: np.ndarray, optimal_plan: np.ndarray, max_cost, modulation_threshold, min_key_duration) -> list:
     """
     Detect points of key modulation based on cost matrix analysis.
-    
+
     Args:
         D: Cost matrix from dynamic programming (num_beats x num_keys)
         optimal_plan: Array of optimal key indices for each beat
         parameters: Algorithm parameters including modulation threshold
-        
+
     Returns:
         list: List of tuples (beat_index, confidence) where modulations occur
     """
     modulation_points = []
     num_beats = len(optimal_plan)
-    
+
     # Window size for cost smoothing
     window_size = 3
-    
+
     # Keep track of the last modulation point
     last_modulation_beat = 0
-    
+
     for beat in range(1, num_beats):
         # Skip if key hasn't changed
-        if optimal_plan[beat] == optimal_plan[beat-1]:
+        if optimal_plan[beat] == optimal_plan[beat - 1]:
             continue
-            
+
         # Skip if too close to previous modulation
         if beat - last_modulation_beat < min_key_duration:
             continue
-            
+
         # Compute cost difference around the potential modulation point
-        prev_costs = D[max(0, beat-window_size):beat, optimal_plan[beat-1]]
-        next_costs = D[beat:min(num_beats, beat+window_size), optimal_plan[beat]]
-        
+        prev_costs = D[max(0, beat - window_size) : beat, optimal_plan[beat - 1]]
+        next_costs = D[beat : min(num_beats, beat + window_size), optimal_plan[beat]]
+
         # Average costs before and after the modulation
         prev_avg_cost = np.mean(prev_costs)
         next_avg_cost = np.mean(next_costs)
-        
+
         # Compute modulation confidence based on cost difference
         cost_diff = abs(next_avg_cost - prev_avg_cost)
         confidence = cost_diff / max_cost  # Normalize by maximum cost
-        
+
         # Only keep significant modulations
         if confidence > modulation_threshold:
             modulation_points.append((beat, confidence))
             last_modulation_beat = beat  # Update last modulation point
-    
+
     return modulation_points

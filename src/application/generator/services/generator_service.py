@@ -1,14 +1,11 @@
 import os
 import pickle
+import json
 
 import torch
-import random
-from torch.utils.data import DataLoader
 
 from src.application.encoder.helpers.remi_helper import remi2midi
 
-from src.application.encoder.models.vocab_model import RemiVocab
-from src.application.dataloader.models.dataloader_seq_collator_model import SeqCollator
 from src.application.generator.models.generator_model import MIDIGeneratorModule
 
 from lightning.pytorch import Trainer
@@ -16,16 +13,12 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from src.application.dataloader.models.dataloader_model import (
     DataloaderModule,
-    DataloaderDataset,
 )
 from src.application.generator.helper.generator_helpers import (
     load_generator_from_checkpoint,
-    reconstruct_sample,
-    medley_iterator,
 )
 
 from src.domain.constants.paths_constants import (
-    DATALOADER_PATH,
     CHECKPOINTS_PATH,
     GENERATOR_PATH,
     GENERATED_PATH,
@@ -33,26 +26,20 @@ from src.domain.constants.paths_constants import (
 )
 from src.domain.models.generator.generator_model import (
     GeneratorTrainingParameters,
-    GeneratorGenerateParameters,
     GeneratorGeneratePromptParameters,
 )
 
 
 def train_generator(parameters: GeneratorTrainingParameters) -> dict:
     torch.multiprocessing.set_start_method("spawn")
-    datamodule_parameters = pickle.load(
-        open(
-            os.path.join(
-                DATALOADER_PATH,
-                parameters.dataset_name,
-                f"{parameters.dataset_name}_datamodule_parameters.pkl",
-            ),
-            "rb",
-        )
-    )
+
+    with open("shared/assets/config.json", "r") as f:
+        config = json.load(f)
+
+    datamodule_parameters = config["dataloader"]
 
     datamodule_parameters["load_latent"] = parameters.load_latent
-    datamodule_parameters["load_desc"] = parameters.load_desc
+    datamodule_parameters["load_symb"] = parameters.load_symb
 
     print("Batch size:", flush=True)
     print(datamodule_parameters["batch_size"], flush=True)
@@ -61,6 +48,10 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
     datamodule_parameters["context_size"] = 512
     # datamodule_parameters["max_positions"] = 512
     # datamodule_parameters["max_bars"] = 512
+
+    # Convert train_val_test_split from list to tuple if needed
+    if isinstance(datamodule_parameters["train_val_test_split"], list):
+        datamodule_parameters["train_val_test_split"] = tuple(datamodule_parameters["train_val_test_split"])
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
@@ -91,7 +82,7 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
             intermediate_size=parameters.intermediate_size,
             num_attention_heads=parameters.num_attention_heads,
             use_pretrained_latent_embeddings=parameters.use_pretrained_latent_embeddings,
-            load_desc=parameters.load_desc,
+            load_symb=parameters.load_symb,
             load_latent=parameters.load_latent,
             load_sentiments=parameters.load_sentiments,
             load_bert_from_ckpt=parameters.load_bert_from_ckpt,
@@ -134,111 +125,8 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
     return {"Message": "Trained Generator"}
 
 
-def generate(parameters: GeneratorGenerateParameters):
-    if parameters.make_medleys:
-        max_bars = parameters.n_medley_pieces * parameters.n_medley_bars
-    else:
-        max_bars = parameters.max_bars
-
-    params = []
-    if parameters.make_medleys:
-        params.append(f"n_pieces={parameters.n_medley_pieces}")
-        params.append(f"n_bars={parameters.n_medley_bars}")
-    if parameters.max_iter > 0:
-        params.append(f"max_iter={parameters.max_iter}")
-    if parameters.max_bars > 0:
-        params.append(f"max_bars={parameters.max_bars}")
-    output_dir = os.path.join(GENERATED_PATH, parameters.dataset_name)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    print(f"Saving generated files to: {output_dir}")
-
-    generator_checkpoint = os.path.join(
-        CHECKPOINTS_PATH,
-        parameters.dataset_name,
-        parameters.training_name,
-        parameters.checkpoint_name,
-    )
-    model = load_generator_from_checkpoint(generator_checkpoint)
-    # model.to(parameters.device)
-
-    datamodule_parameters = pickle.load(
-        open(
-            os.path.join(
-                DATALOADER_PATH,
-                parameters.dataset_name,
-                f"{parameters.dataset_name}_datamodule_parameters.pkl",
-            ),
-            "rb",
-        )
-    )
-
-    datamodule_parameters["load_latent"] = parameters.load_latent
-    datamodule_parameters["load_desc"] = parameters.load_desc
-
-    dataset_parameters = {
-        "dataset_name": datamodule_parameters["dataset_name"],
-        "context_size": -1,
-        "max_positions": datamodule_parameters["max_positions"],
-        "max_bars": datamodule_parameters["max_bars"],
-        "max_bars_per_context": datamodule_parameters["max_bars_per_context"],
-        "max_contexts_per_file": datamodule_parameters["max_contexts_per_file"],
-        "bar_token_mask": datamodule_parameters["bar_token_mask"],
-        "bar_token_idx": datamodule_parameters["bar_token_idx"],
-        "batch_size": datamodule_parameters["batch_size"],
-        "num_workers": datamodule_parameters["num_workers"],
-        "pin_memory": datamodule_parameters["pin_memory"],
-        "train_val_test_split": datamodule_parameters["train_val_test_split"],
-        "vocab": RemiVocab(),
-        "load_latent": datamodule_parameters["load_latent"],
-        "load_desc": datamodule_parameters["load_desc"],
-    }
-
-    datamodule = DataloaderModule(**datamodule_parameters)
-
-    datamodule.setup("test")
-    midi_files = datamodule.test_ds.files
-    random.shuffle(midi_files)
-
-    if parameters.max_n_files > 0:
-        midi_files = midi_files[: parameters.max_n_files]
-
-    dataset = DataloaderDataset(midi_files, **dataset_parameters)
-
-    coll = SeqCollator(context_size=-1)
-    dl = DataLoader(dataset, batch_size=datamodule_parameters["batch_size"], collate_fn=coll)
-
-    description_flavor = "both" if parameters.load_latent and parameters.load_desc else "latent" if parameters.load_latent else "description"
-
-    if parameters.make_medleys:
-        dl = medley_iterator(
-            dl,
-            n_pieces=parameters.n_medley_pieces,
-            n_bars=parameters.n_medley_bars,
-            description_flavor=description_flavor,
-        )
-
-    with torch.no_grad():
-        for batch in dl:
-            reconstruct_sample(
-                model,
-                batch,
-                output_dir=output_dir,
-                max_iter=parameters.max_iter,
-                max_bars=max_bars,
-                verbose=parameters.verbose,
-                description_flavor=description_flavor,
-            )
-
-    return {"Message": "Generated Files"}
-
-
 def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
-    if parameters.make_medleys:
-        max_bars = parameters.n_medley_pieces * parameters.n_medley_bars
-    else:
-        max_bars = parameters.max_bars
+    max_bars = parameters.max_bars
 
     output_dir = os.path.join(GENERATED_PATH, parameters.dataset_name)
     if not os.path.exists(output_dir):
@@ -269,8 +157,8 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
     #
     # file, _ = find_closest_file(target_labels, file_labels)
 
-    # file = "0a0a52a35fa8a6384ef810e82d5ba53c.mid__representation"
-    file = "05db7160389e20ad1ba447a9798d0025.mid__representation"
+    file = "0a0a52a35fa8a6384ef810e82d5ba53c.mid__representation"
+    # file = "05db7160389e20ad1ba447a9798d0025.mid__representation"
 
     representation = pickle.load(
         open(
@@ -286,15 +174,15 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
     batch = {
         key: tensor.unsqueeze(0)[:, : parameters.initial_context]
         for key, tensor in representation.items()
-        if key not in ["file", "sentiment_vector", "input_ids", "bar_ids", "position_ids"]
+        if key not in ["file", "sentiments_vector", "input_ids", "bar_ids", "position_ids"]
     }
 
     # batch = None
-    # sentiment_vector = parameters.label_scores
+    # sentiments_vector = parameters.label_scores
     # file, _ = find_closest_file(target_labels, file_labels)
     # print(file, flush=True)
-    # sentiment_vector = torch.tensor(sentiment_vector, dtype=torch.float32, device=torch.device("cuda")).expand(1, -1)  # device = model.device
-    # sentiment_vector = None
+    # sentiments_vector = torch.tensor(sentiments_vector, dtype=torch.float32, device=torch.device("cuda")).expand(1, -1)  # device = model.device
+    # sentiments_vector = None
 
     sample = model.sample(batch, max_length=parameters.max_n_tokens, max_bars=max_bars)
 

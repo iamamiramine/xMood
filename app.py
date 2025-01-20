@@ -5,9 +5,9 @@ from src.api.controllers import (
     music_base_controller,
     health_controller,
     feature_extraction_controller,
-    dataloader_controller,
     generator_controller,
     representation_controller,
+    emotion_mapper_controller,
 )
 from src.handlers.exception_handler import add_exception_handlers
 
@@ -29,12 +29,12 @@ tags_metadata = [
         "description": "Representation",
     },
     {
-        "name": "dataloader",
-        "description": "Dataloader",
-    },
-    {
         "name": "feature_extraction",
         "description": "Feature Extraction Module",
+    },
+    {
+        "name": "emotion_mapper",
+        "description": "Emotion Mapper",
     },
     {
         "name": "generator",
@@ -75,15 +75,15 @@ app.include_router(
     responses={404: {"description": "Not found"}},
 )
 app.include_router(
-    dataloader_controller.router,
-    prefix="/dataloader",
-    tags=["dataloader"],
-    responses={404: {"description": "Not found"}},
-)
-app.include_router(
     feature_extraction_controller.router,
     prefix="/feature_extraction",
     tags=["feature_extraction"],
+    responses={404: {"description": "Not found"}},
+)
+app.include_router(
+    emotion_mapper_controller.router,
+    prefix="/emotion_mapper",
+    tags=["emotion_mapper"],
     responses={404: {"description": "Not found"}},
 )
 app.include_router(

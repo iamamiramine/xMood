@@ -8,6 +8,7 @@ import torch
 from lightning import LightningDataModule
 
 from torch.utils.data import IterableDataset, DataLoader
+
 # from torchdata.datapipes.iter import IterableWrapper
 from torch.utils.data.datapipes.iter import IterableWrapper
 
@@ -16,15 +17,16 @@ from src.application.representation.services.representation_services import (
 )
 from src.persistence.dataloader.repositories.dataloader_repository import CPU_Unpickler
 from src.application.dataloader.models.dataloader_seq_collator_model import SeqCollator
-from src.application.encoder.models.vocab_model import RemiVocab, DescriptionVocab
+from src.application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
 from src.domain.constants.encoder.token_constants import PAD_TOKEN
 from src.domain.constants.paths_constants import (
     ENCODINGS_PATH,
     DATALOADER_PATH,
     LATENTS_PATH,
     MIDI_PATH,
-    DESCRIPTIONS_PATH,
+    SYMBOLIC_FEATURES_PATH,
     REPRESENTATIONS_PATH,
+    LABELS_PATH,
 )
 
 
@@ -59,7 +61,8 @@ class DataloaderModule(LightningDataModule):
         pin_memory,
         train_val_test_split,
         load_latent,
-        load_desc,
+        load_symb,
+        load_emotions,
     ):
         super().__init__()
 
@@ -80,7 +83,8 @@ class DataloaderModule(LightningDataModule):
         self.pin_memory = pin_memory
         self.train_val_test_split = train_val_test_split
         self.load_latent = load_latent
-        self.load_desc = load_desc
+        self.load_symb = load_symb
+        self.load_emotions = load_emotions
         self.vocab = RemiVocab()
 
         self.dataset_parameters = {
@@ -98,7 +102,8 @@ class DataloaderModule(LightningDataModule):
             "train_val_test_split": self.train_val_test_split,
             "vocab": self.vocab,
             "load_latent": self.load_latent,
-            "load_desc": self.load_desc,
+            "load_symb": self.load_symb,
+            "load_emotions": self.load_emotions,
         }
 
     def setup(self, stage=None):
@@ -182,7 +187,8 @@ class DataloaderDataset(IterableDataset):
         train_val_test_split,
         vocab,
         load_latent,
-        load_desc,
+        load_symb,
+        load_emotions,
     ):
         self.files = files
         self.dataset_name = dataset_name
@@ -199,8 +205,9 @@ class DataloaderDataset(IterableDataset):
         self.train_val_test_split = train_val_test_split
         self.vocab = vocab
         self.load_latent = load_latent
-        self.load_desc = load_desc
-        self.desc_vocab = DescriptionVocab()
+        self.load_symb = load_symb
+        self.load_emotions = load_emotions
+        self.desc_vocab = SymbolicFeaturesVocab()
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
@@ -220,21 +227,21 @@ class DataloaderDataset(IterableDataset):
                 print(err)
                 # raise err
                 continue
-            if self.load_desc:
+            if self.load_symb:
                 try:
-                    desc_file = os.path.join(
-                        str(DESCRIPTIONS_PATH),
+                    symb_file = os.path.join(
+                        str(SYMBOLIC_FEATURES_PATH),
                         self.dataset_name,
-                        f"{os.path.basename((self.split[i]))}_description.pkl",
+                        f"{os.path.basename((self.split[i]))}_symbolic.pkl",
                     )
-                    desc = pickle.load(open(desc_file, "rb"))
-                    description = desc["description"]
+                    symb = pickle.load(open(symb_file, "rb"))
+                    symbolic = symb["symbolic"]
                 except FileNotFoundError as err:
                     print(err)
                     # raise err
                     continue
             else:
-                description = None
+                symbolic = None
             if self.load_latent:
                 try:
                     latents_path = os.path.join(
@@ -288,7 +295,7 @@ class DataloaderDataset(IterableDataset):
                     events,
                     latents,
                     codes,
-                    description,
+                    symbolic,
                     save=True,
                     out_dir=os.path.join(REPRESENTATIONS_PATH, self.dataset_name),
                 )

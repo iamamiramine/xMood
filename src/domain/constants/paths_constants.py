@@ -19,7 +19,7 @@ ENCODINGS_PATH = f"{ROOT_OUTPUT}/encodings/"
 
 CHECKPOINTS_PATH = f"{ROOT_OUTPUT}/checkpoints/"
 
-DESCRIPTIONS_PATH = f"{ROOT_OUTPUT}/descriptions/"
+SYMBOLIC_FEATURES_PATH = f"{ROOT_OUTPUT}/symbolic_features/"
 
 REPRESENTATIONS_PATH = f"{ROOT_OUTPUT}/representations/"
 
@@ -28,8 +28,7 @@ LATENTS_PATH = f"{ROOT_OUTPUT}/latents/"
 CODES_PATH = f"{ROOT_OUTPUT}/codes/"
 FEATURES_PATH = f"{ROOT_OUTPUT}/features/"
 
-SENTIMENT_LEARNER_PATH = f"{ROOT_OUTPUT}/sentiment_learner/"
-ANN_PATH = f"{ROOT_OUTPUT}/ann/"
+EMOTION_MAPPING_PATH = f"{ROOT_OUTPUT}/emotion_mapping/"
 
 GENERATOR_PATH = f"{ROOT_OUTPUT}/generator/"
 GENERATED_PATH = f"{ROOT_OUTPUT}/generated/"

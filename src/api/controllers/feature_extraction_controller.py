@@ -8,8 +8,8 @@ from src.domain.models.feature_extraction.feature_extraction_model import (
     TSNEParameters,
     CorrelationParameters,
     LatentRepresentationDatasetParameters,
-    DescriptionParameters,
-    DescriptionDatasetParameters,
+    SymbolicFeaturesParameters,
+    SymbolicFeaturesDatasetParameters,
 )
 
 from src.application.feature_extraction.services import feature_extraction_service
@@ -17,12 +17,12 @@ from src.application.feature_extraction.services import feature_extraction_servi
 router = APIRouter()
 
 
-@router.post("/extract_description_sample")
-def extract_description_sample(parameters: DescriptionParameters) -> dict:
+@router.post("/extract_symbolic_features")
+def extract_symbolic_features(parameters: SymbolicFeaturesParameters) -> dict:
     """
     Description:
     ------------
-        Extract Description for 1 File
+        Extract Symbolic Features for 1 File
 
     Parameters:
     -----------
@@ -34,15 +34,15 @@ def extract_description_sample(parameters: DescriptionParameters) -> dict:
         A dictionary
 
     """
-    return feature_extraction_service.extract_description_sample(parameters)
+    return feature_extraction_service.extract_symbolic_features(parameters)
 
 
-@router.post("/extract_description_dataset")
-def extract_description_dataset(parameters: DescriptionDatasetParameters) -> dict:
+@router.post("/extract_symbolic_features_dataset")
+def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParameters) -> dict:
     """
     Description:
     ------------
-        Extract Description for Dataset
+        Extract Symbolic Features for Dataset
 
     Parameters:
     -----------
@@ -54,7 +54,7 @@ def extract_description_dataset(parameters: DescriptionDatasetParameters) -> dic
         A dictionary
 
     """
-    return asyncio.run(feature_extraction_service.extract_description_dataset(parameters))
+    return asyncio.run(feature_extraction_service.extract_symbolic_features_dataset(parameters))
 
 
 @router.post("/train_vae")
@@ -95,43 +95,3 @@ def generate_latent_representations_dataset(parameters: LatentRepresentationData
 
     """
     return feature_extraction_service.generate_latent_representations_dataset(parameters)
-
-
-@router.post("/generate_tsne")
-def generate_tsne(parameters: TSNEParameters) -> dict:
-    """
-    Description:
-    ------------
-        Generate Latent Representations of a File
-
-    Parameters:
-    -----------
-        parameters: LatentRepresentationParameters
-
-    Returns:
-    --------
-    dict
-        A dictionary
-
-    """
-    return feature_extraction_service.generate_tsne(parameters)
-
-
-@router.post("/get_correlation")
-def get_correlation(parameters: CorrelationParameters) -> dict:
-    """
-    Description:
-    ------------
-        Generate Latent Representations of a File
-
-    Parameters:
-    -----------
-        parameters: LatentRepresentationParameters
-
-    Returns:
-    --------
-    dict
-        A dictionary
-
-    """
-    return feature_extraction_service.get_correlation(parameters)

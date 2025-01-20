@@ -14,37 +14,6 @@ def get_chord_qualities():
     return ["maj", "min", "dim", "aug", "dom7", "maj7", "min7", "N"]
 
 
-def get_chord_types():
-    """Returns mapping of chord type to its common name"""
-    return {
-        "maj": "major",
-        "min": "minor",
-        "dim": "diminished",
-        "aug": "augmented",
-        "dom7": "dominant seventh",
-        "maj7": "major seventh",
-        "min7": "minor seventh",
-        "N": "no chord",
-    }
-
-
-def get_chord_symbols():
-    """Returns mapping of chord type to its standard symbol notation"""
-    return {"maj": "", "min": "m", "dim": "°", "aug": "+", "dom7": "7", "maj7": "maj7", "min7": "m7", "N": "N"}  # Major is typically unmarked
-
-
-# def get_chord_maps():
-#     return {
-#         "maj": [0, 4],
-#         "min": [0, 3],
-#         "dim": [0, 3, 6],
-#         "aug": [0, 4, 8],
-#         "dom7": [0, 4, 10],
-#         "maj7": [0, 4, 11],
-#         "min7": [0, 3, 10],
-#     }
-
-
 def get_chord_maps():
     return {
         "maj": [0, 4, 7],  # Added missing third note (7 semitones from root)

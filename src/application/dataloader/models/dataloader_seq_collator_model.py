@@ -65,11 +65,21 @@ class SeqCollator:
                 desc_bar_ids = pad_sequence(desc_bar_ids, batch_first=True, padding_value=0)
                 batch["desc_bar_ids"] = desc_bar_ids[:, :desc_len]
 
-        if "sentiment_vector" in features[0]:
-            sentiment_vector = [feature["sentiment_vector"] for feature in features]
-            sentiment_vector = torch.tensor(sentiment_vector, dtype=torch.float32, device=self.device)
-            sentiment_vector = sentiment_vector.expand(batch_size, -1)
-            batch["sentiment_vector"] = sentiment_vector
+        if "encoded_emotions" in features[0]:
+            encoded_emotions = [feature["encoded_emotions"] for feature in features]
+            encoded_emotions = torch.tensor(encoded_emotions, dtype=torch.long)
+            encoded_emotions = pad_sequence(encoded_emotions, batch_first=True, padding_value=0)
+            batch["encoded_emotions"] = encoded_emotions
+
+        if "emotion_tokens" in features[0]:
+            emotion_tokens = [feature["emotion_tokens"] for feature in features]
+            batch["emotion_tokens"] = emotion_tokens
+
+        if "emotions_vector" in features[0]:
+            emotions_vector = [feature["emotions_vector"] for feature in features]
+            emotions_vector = torch.tensor(emotions_vector, dtype=torch.float32, device=self.device)
+            emotions_vector = emotions_vector.expand(batch_size, -1)
+            batch["emotions_vector"] = emotions_vector
 
         if "file" in features[0]:
             batch["files"] = [feature["file"] for feature in features]

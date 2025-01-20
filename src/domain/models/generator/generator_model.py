@@ -11,7 +11,7 @@ class GeneratorTrainingParameters(BaseModel):
     training_name: Annotated[str, Query(description="Output Directory")] = ""
 
     load_latent: Annotated[bool, Query(description="Latent")] = False
-    load_desc: Annotated[bool, Query(description="Description")] = False
+    load_symb: Annotated[bool, Query(description="Symbolic Features")] = False
     load_sentiments: Annotated[bool, Query(description="Sentiments")] = False
 
     load_from_checkpoint: Annotated[bool, Query(description="Load from checkpoint")] = False
@@ -42,7 +42,7 @@ class GeneratorGenerateParameters(BaseModel):
     dataset_name: Annotated[str, Query(description="Name of Dataset")]
 
     load_latent: Annotated[bool, Query(description="Latent")] = True
-    load_desc: Annotated[bool, Query(description="Description")] = False
+    load_symb: Annotated[bool, Query(description="Symbolic Features")] = False
 
     training_name: Annotated[str, Query(description="Training Name")] = ""
     load_from_checkpoint: Annotated[bool, Query(description="Load from checkpoint")] = False

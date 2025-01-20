@@ -19,5 +19,6 @@ class RepresentationParameters(BaseModel):
     bar_token_mask: Annotated[str, Query(description="Bar token mask")] = None
     max_bars_per_context: Annotated[int, Query(description="Max Bars per Context")] = -1
     max_contexts_per_file: Annotated[int, Query(description="Max contexts per file")] = -1
-    load_desc: Annotated[bool, Query(description="Load Description Features")] = False
+    load_symb: Annotated[bool, Query(description="Load Symbolic Features Features")] = False
     load_latent: Annotated[bool, Query(description="Load Latent Features")] = False
+    load_emotions: Annotated[bool, Query(description="Load Emotion Features")] = False

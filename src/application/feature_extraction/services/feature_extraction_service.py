@@ -1,15 +1,10 @@
 import asyncio
 import os
-import pickle
+import json
 
-import numpy as np
-import pandas as pd
 import torch
-from scipy.stats import pearsonr, spearmanr
 
 import pretty_midi as pm
-
-from sklearn.manifold import TSNE
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
@@ -18,51 +13,39 @@ from src.persistence.dataloader.repositories.dataloader_repository import (
     save_async,
     async_load,
 )
-from src.application.encoder.models.item_model import Item
 from src.application.encoder.helpers.encoder_helper import (
     read_note_tempo,
     extract_downbeats,
-    extract_beats,
     quantize_midi,
     group_items,
     extract_dominant_keys,
 )
-from src.application.feature_extraction.helpers.description_helper import (
-    get_description,
+from src.application.feature_extraction.helpers.symbolic_features_helper import (
+    get_symbolic_features,
 )
 from src.application.dataloader.models.dataloader_model import DataloaderModule
 from src.application.feature_extraction.helpers.latent_features_helper import (
     load_vae_from_checkpoint,
-    read_features,
-    read_labels,
-    plot_reduced_data,
-    cluster_reduced_data,
-    rank_correlation,
-    plot_correlation,
-    model_using_ann,
 )
 from src.domain.models.feature_extraction.feature_extraction_model import (
     VQVAEParameters,
-    TSNEParameters,
-    CorrelationParameters,
     LatentRepresentationDatasetParameters,
-    DescriptionParameters,
-    DescriptionDatasetParameters,
+    SymbolicFeaturesParameters,
+    SymbolicFeaturesDatasetParameters,
 )
 from src.application.feature_extraction.models.vae_model import VqVaeModule
 
 from src.domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     VAE_PATH,
-    DATALOADER_PATH,
     MIDI_PATH,
     CHORDS_PATH,
     KEYS_PATH,
-    DESCRIPTIONS_PATH,
+    SYMBOLIC_FEATURES_PATH,
 )
 
 
-def extract_description_sample(parameters: DescriptionParameters):
+def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
     if isinstance(parameters.midi, str):
         midi = pm.PrettyMIDI(parameters.midi)
     else:
@@ -70,7 +53,6 @@ def extract_description_sample(parameters: DescriptionParameters):
 
     note_items, tempo_items = read_note_tempo(midi)
     quantize_midi(midi, note_items, midi.resolution)
-    beats = extract_beats(midi)
     downbeats = extract_downbeats(midi)
 
     # Asynchronous file read for chords
@@ -86,26 +68,26 @@ def extract_description_sample(parameters: DescriptionParameters):
     items = remi_keys + remi_chords + tempo_items + note_items
     groups = group_items(midi, downbeats, items=items)
     groups = extract_dominant_keys(groups)
-    description = get_description(midi, groups)
+    symbolic_features = get_symbolic_features(midi, groups)
 
-    sample = {"description": description}
+    sample = {"symbolic": symbolic_features}
 
     if parameters.save:
         # Asynchronous saving function
-        save_async(parameters.description_out_dir, parameters.midi, sample, "description")
+        save_async(parameters.description_out_dir, parameters.midi, sample, "symbolic")
 
-    # return True  # {"Message": "Extracted Description"}
+    # return True  # {"Message": "Extracted Symbolic Features"}
 
 
-async def extract_description_dataset(parameters: DescriptionDatasetParameters) -> dict:
+async def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParameters) -> dict:
     dataset_path = os.path.join(MIDI_PATH, parameters.dataset_name)
     chords_out_dir = os.path.join(CHORDS_PATH, parameters.dataset_name)
     keys_out_dir = os.path.join(KEYS_PATH, parameters.dataset_name)
-    description_out_dir = os.path.join(DESCRIPTIONS_PATH, parameters.dataset_name)
+    description_out_dir = os.path.join(SYMBOLIC_FEATURES_PATH, parameters.dataset_name)
 
     async def process_file(file_path: str) -> tuple[bool, str]:
-        extract_description_sample(
-            DescriptionParameters(
+        extract_symbolic_features(
+            SymbolicFeaturesParameters(
                 midi=file_path,
                 chords_out_dir=chords_out_dir,
                 keys_out_dir=keys_out_dir,
@@ -118,6 +100,7 @@ async def extract_description_dataset(parameters: DescriptionDatasetParameters) 
     # Create tasks for each file
     midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
     total_files = len(midi_files)
+    print(total_files, flush=True)
     processed = 0
 
     # Process files in batches
@@ -130,23 +113,19 @@ async def extract_description_dataset(parameters: DescriptionDatasetParameters) 
         results = await asyncio.gather(*batch_tasks, return_exceptions=False)
         processed += len(batch)
 
-    return {"Message": "Extracted Description Dataset"}
+    return {"Message": "Extracted Symbolic Features Dataset"}
 
 
 def train_vae(parameters: VQVAEParameters) -> dict:
-    datamodule_parameters = pickle.load(
-        open(
-            os.path.join(
-                DATALOADER_PATH,
-                parameters.dataset_name,
-                f"{parameters.dataset_name}_datamodule_parameters.pkl",
-            ),
-            "rb",
-        )
-    )
+    with open("shared/assets/config.json", "r") as f:
+        config = json.load(f)
+
+    datamodule_parameters = config["dataloader"]
+    datamodule_parameters["load_latent"] = False
+    datamodule_parameters["load_symb"] = False
 
     datamodule_parameters["load_latent"] = False
-    datamodule_parameters["load_desc"] = False
+    datamodule_parameters["load_symb"] = False
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
@@ -222,19 +201,17 @@ def train_vae(parameters: VQVAEParameters) -> dict:
 def generate_latent_representations_dataset(
     parameters: LatentRepresentationDatasetParameters,
 ) -> dict:
-    datamodule_parameters = pickle.load(
-        open(
-            os.path.join(
-                DATALOADER_PATH,
-                parameters.dataset_name,
-                f"{parameters.dataset_name}_datamodule_parameters.pkl",
-            ),
-            "rb",
-        )
-    )
+    with open("shared/assets/config.json", "r") as f:
+        config = json.load(f)
+
+    datamodule_parameters = config["dataloader"]
     datamodule_parameters["load_latent"] = False
-    datamodule_parameters["load_desc"] = False
+    datamodule_parameters["load_symb"] = False
     datamodule_parameters["context_size"] = -1
+
+    # Convert train_val_test_split from list to tuple if needed
+    if isinstance(datamodule_parameters["train_val_test_split"], list):
+        datamodule_parameters["train_val_test_split"] = tuple(datamodule_parameters["train_val_test_split"])
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
@@ -280,54 +257,3 @@ def generate_latent_representations_dataset(
 
     predictions = trainer.predict(model, datamodule=datamodule)
     return {"Message": "Generated Latent Representations"}
-
-
-def generate_tsne(parameters: TSNEParameters):
-    mat = read_features(parameters.dataset_name)
-    mat = np.vstack(mat)
-    tsne_reduced_vectors = TSNE(
-        n_components=parameters.n_components,
-        perplexity=parameters.perplexity,
-        early_exaggeration=parameters.early_exaggeration,
-        learning_rate=parameters.learning_rate,
-        n_iter=parameters.n_iter,
-        n_iter_without_progress=parameters.n_iter_without_progress,
-        min_grad_norm=parameters.min_grad_norm,
-        metric=parameters.metric,
-        metric_params=parameters.metric_params,
-        init=parameters.init,
-        verbose=parameters.verbose,
-        random_state=parameters.random_state,
-        method=parameters.method,
-        angle=parameters.angle,
-        n_jobs=parameters.n_jobs,
-    ).fit_transform(mat)
-
-    if parameters.cluster:
-        labels, label_columns = read_labels(parameters.dataset_name)
-        data, label_vectors, cntr = cluster_reduced_data(tsne_reduced_vectors, labels)
-        if parameters.plot:
-            plot_reduced_data(data, cntr)
-
-    return {"Message": "Generated TSNE"}
-
-
-def get_correlation(parameters: CorrelationParameters):
-    labels, label_columns = read_labels(parameters.dataset_name)
-    features = read_features(parameters.dataset_name)
-    correlation_matrix = {}
-    for label in labels.loc[:, label_columns]:
-        y = labels.loc[:, label_columns][label]
-        correlation_matrix[label] = []
-        for feature, X in features.loc[:, features.columns != "file_name"].items():
-            if parameters.correlation_type == "spearmann":
-                corr_coeff, p_value = spearmanr(X, y)
-            elif parameters.correlation_type == "pearson":
-                corr_coeff, p_value = pearsonr(X, y)
-            correlation_matrix[label].append(corr_coeff)
-    correlation_matrix = pd.DataFrame(correlation_matrix, columns=labels)
-    if parameters.rank:
-        rank_correlation(correlation_matrix)
-    if parameters.plot:
-        plot_correlation(correlation_matrix)
-    return {"Message": "Got Correlation"}

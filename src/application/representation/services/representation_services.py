@@ -1,15 +1,16 @@
 import os
 import torch
 
-from src.application.feature_extraction.helpers.latent_features_helper import read_label_for_midi
+from src.application.emotion_mapper.helpers.emotion_mapper_helper import read_label_for_midi
 from src.persistence.dataloader.repositories.dataloader_repository import (
     save_async,
     async_load,
 )
 from src.domain.constants.paths_constants import (
-    DESCRIPTIONS_PATH,
+    SYMBOLIC_FEATURES_PATH,
     LATENTS_PATH,
     ENCODINGS_PATH,
+    LABELS_PATH,
 )
 from src.domain.models.representation.representation_model import (
     RepresentationParameters,
@@ -21,7 +22,7 @@ from src.application.encoder.helpers.vocab_helper import (
     mask_bar_tokens,
     get_bos_eos_events,
 )
-from src.application.encoder.models.vocab_model import RemiVocab, DescriptionVocab
+from src.application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
 from src.domain.constants.encoder.token_constants import (
     BAR_KEY,
     BOS_TOKEN,
@@ -40,18 +41,18 @@ def run_representation(parameters: RepresentationParameters):
     except ValueError as err:
         print(err)
 
-    if parameters.load_desc:
+    if parameters.load_symb:
         try:
-            desc_dir = os.path.join(
-                str(DESCRIPTIONS_PATH),
+            symb_dir = os.path.join(
+                str(SYMBOLIC_FEATURES_PATH),
                 parameters.dataset_name,
             )
-            desc = async_load(desc_dir, parameters.midi, "description")
-            description = desc["description"]
+            symb = async_load(symb_dir, parameters.midi, "symbolic")
+            symbolic = symb["symbolic"]
         except ValueError as err:
             print(err)
     else:
-        description = None
+        symbolic = None
 
     if parameters.load_latent:
         try:
@@ -83,7 +84,7 @@ def run_representation(parameters: RepresentationParameters):
         events=events,
         latents=latents,
         codes=codes,
-        description=description,
+        symbolic=symbolic,
         save=parameters.save,
         out_dir=parameters.out_dir,
         api_call=parameters.api_call,
@@ -102,7 +103,7 @@ def represent_encoding(
     events,
     latents=None,
     codes=None,
-    description=None,
+    symbolic=None,
     save=False,
     out_dir="",
     api_call=False,
@@ -165,49 +166,49 @@ def represent_encoding(
             "position_ids": p_ids,
         }
 
-        if description is not None:
-            desc_vocab = DescriptionVocab()
+        if symbolic is not None:
+            symb_vocab = SymbolicFeaturesVocab()
             min_bar = b_ids[0]
-            desc_events = description
-            desc_bars = [i for i, event in enumerate(desc_events) if f"{BAR_KEY}_" in event]
-            start_idx = desc_bars[max(0, min_bar - 1)]
+            symb_events = symbolic
+            symb_bars = [i for i, event in enumerate(symb_events) if f"{BAR_KEY}_" in event]
+            start_idx = symb_bars[max(0, min_bar - 1)]
 
-            desc_bar_ids = torch.zeros(len(desc_events), dtype=torch.int)
-            desc_bar_ids[desc_bars] = 1
-            desc_bar_ids = torch.cumsum(desc_bar_ids, dim=0)
+            symb_bar_ids = torch.zeros(len(symb_events), dtype=torch.int)
+            symb_bar_ids[symb_bars] = 1
+            symb_bar_ids = torch.cumsum(symb_bar_ids, dim=0)
 
             if max_bars_per_context and max_bars_per_context > 0:
-                end_idx = desc_bars[min_bar + max_bars_per_context]
-                desc_events = desc_events[start_idx:end_idx]
-                desc_bar_ids = desc_bar_ids[start_idx:end_idx]
+                end_idx = symb_bars[min_bar + max_bars_per_context]
+                symb_events = symb_events[start_idx:end_idx]
+                symb_bar_ids = symb_bar_ids[start_idx:end_idx]
                 start_idx = 0
 
-            desc_bos = torch.tensor(desc_vocab.encode([BOS_TOKEN]), dtype=torch.int)
-            desc_eos = torch.tensor(desc_vocab.encode([EOS_TOKEN]), dtype=torch.int)
-            desc_ids = torch.tensor(desc_vocab.encode(desc_events), dtype=torch.int)
+            symb_bos = torch.tensor(symb_vocab.encode([BOS_TOKEN]), dtype=torch.int)
+            symb_eos = torch.tensor(symb_vocab.encode([EOS_TOKEN]), dtype=torch.int)
+            symb_ids = torch.tensor(symb_vocab.encode(symb_events), dtype=torch.int)
 
             if min_bar == 0:
-                desc_ids = torch.cat([desc_bos, desc_ids, desc_eos])
-                desc_bar_ids = torch.cat([zero, desc_bar_ids, zero])
+                symb_ids = torch.cat([symb_bos, symb_ids, symb_eos])
+                symb_bar_ids = torch.cat([zero, symb_bar_ids, zero])
             else:
-                desc_ids = torch.cat([desc_ids, desc_eos])
-                desc_bar_ids = torch.cat([desc_bar_ids, zero])
+                symb_ids = torch.cat([symb_ids, symb_eos])
+                symb_bar_ids = torch.cat([symb_bar_ids, zero])
 
             if context_size > 0:
                 start, end = start_idx, start_idx + context_size + 1
-                x["description"] = desc_ids[start:end]
-                x["desc_bar_ids"] = desc_bar_ids[start:end]
+                x["symbolic"] = symb_ids[start:end]
+                x["symb_bar_ids"] = symb_bar_ids[start:end]
             else:
-                x["description"] = desc_ids[start:]
-                x["desc_bar_ids"] = desc_bar_ids[start:]
+                x["symbolic"] = symb_ids[start:]
+                x["symb_bar_ids"] = symb_bar_ids[start:]
 
         if latents is not None:
             x["latents"] = latents
             x["codes"] = codes
 
-        # midi_labels_df, label_columns = read_label_for_midi(dataset_name, midi)
-        # sentiment_vector = midi_labels_df[label_columns].values.flatten().tolist()
-        # x["sentiment_vector"] = sentiment_vector
+        midi_labels_df, label_columns = read_label_for_midi(dataset_name, midi)
+        emotions_vector = midi_labels_df[label_columns].values.flatten().tolist()
+        x["emotions_vector"] = emotions_vector
 
         if save:
             save_async(out_dir, midi, x, "_representation")
