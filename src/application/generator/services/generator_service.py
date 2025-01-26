@@ -4,50 +4,43 @@ import json
 
 import torch
 
-from src.application.encoder.helpers.remi_helper import remi2midi
+from application.encoder.helpers.remi_helper import remi2midi
 
-from src.application.generator.models.generator_model import MIDIGeneratorModule
+from application.generator.models.generator_model import MIDIGeneratorModule
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
-from src.application.dataloader.models.dataloader_model import (
+from application.dataloader.models.dataloader_model import (
     DataloaderModule,
 )
-from src.application.generator.helper.generator_helpers import (
+from application.generator.helper.generator_helpers import (
     load_generator_from_checkpoint,
 )
 
-from src.domain.constants.paths_constants import (
+from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     GENERATOR_PATH,
     GENERATED_PATH,
     REPRESENTATIONS_PATH,
 )
-from src.domain.models.generator.generator_model import (
-    GeneratorTrainingParameters,
-    GeneratorGeneratePromptParameters,
-)
 
 
-def train_generator(parameters: GeneratorTrainingParameters) -> dict:
+def train_generator(config_path: str) -> dict:
+    """Train a generator model using parameters from the config file."""
     torch.multiprocessing.set_start_method("spawn")
 
-    with open("shared/assets/config.json", "r") as f:
+    # Load configuration
+    with open(config_path, "r") as f:
         config = json.load(f)
 
+    generator_config = config.get("generator", {})
     datamodule_parameters = config["dataloader"]
 
-    datamodule_parameters["load_latent"] = parameters.load_latent
-    datamodule_parameters["load_symb"] = parameters.load_symb
-
-    print("Batch size:", flush=True)
-    print(datamodule_parameters["batch_size"], flush=True)
+    datamodule_parameters["load_latent"] = datamodule_parameters.get("load_latent", True)
+    datamodule_parameters["load_symb"] = datamodule_parameters.get("load_symb", True)
     datamodule_parameters["batch_size"] = 4
-
     datamodule_parameters["context_size"] = 512
-    # datamodule_parameters["max_positions"] = 512
-    # datamodule_parameters["max_bars"] = 512
 
     # Convert train_val_test_split from list to tuple if needed
     if isinstance(datamodule_parameters["train_val_test_split"], list):
@@ -55,44 +48,44 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    accumulate_grad_batches = parameters.target_batch_size // datamodule.batch_size
-    if parameters.load_from_checkpoint:
+    accumulate_grad_batches = generator_config.get("target_batch_size", 256) // datamodule.batch_size
+    if generator_config.get("load_from_checkpoint", False):
         generator_checkpoint = os.path.join(
             CHECKPOINTS_PATH,
-            parameters.dataset_name,
-            parameters.training_name,
-            parameters.checkpoint_name,
+            datamodule_parameters.get("dataset_name"),
+            generator_config.get("training_name"),
+            generator_config.get("checkpoint_name"),
         )
         model = load_generator_from_checkpoint(generator_checkpoint)
     else:
         model = MIDIGeneratorModule(
-            d_model=512,  # from VAE
-            d_latent=1024,  # from VAE
-            n_codes=2048,  # from VAE
-            n_groups=16,  # from VAE
+            d_model=config.get("vae", {}).get("d_model", 512),
+            d_latent=config.get("vae", {}).get("d_latent", 1024),
+            n_codes=config.get("vae", {}).get("n_codes", 2048),
+            n_groups=config.get("vae", {}).get("n_groups", 16),
             context_size=datamodule_parameters["context_size"],
             max_bars=datamodule_parameters["max_bars"],
             max_positions=datamodule_parameters["max_positions"],
-            lr=parameters.lr,
-            lr_schedule=parameters.lr_schedule,
-            warmup_steps=parameters.warmup_steps,
-            max_steps=parameters.max_steps,
-            encoder_layers=parameters.encoder_layers,
-            decoder_layers=parameters.decoder_layers,
-            intermediate_size=parameters.intermediate_size,
-            num_attention_heads=parameters.num_attention_heads,
-            use_pretrained_latent_embeddings=parameters.use_pretrained_latent_embeddings,
-            load_symb=parameters.load_symb,
-            load_latent=parameters.load_latent,
-            load_sentiments=parameters.load_sentiments,
-            load_bert_from_ckpt=parameters.load_bert_from_ckpt,
-            save_encoder_decoder_path=os.path.join(GENERATOR_PATH, parameters.dataset_name, parameters.training_name, "BERT"),
+            lr=generator_config.get("lr", 1e-4),
+            lr_schedule=generator_config.get("lr_schedule", "const"),
+            warmup_steps=generator_config.get("warmup_steps", 4000),
+            max_steps=generator_config.get("max_steps", 100000000000000000000),
+            encoder_layers=generator_config.get("encoder_layers", 6),
+            decoder_layers=generator_config.get("decoder_layers", 6),
+            intermediate_size=generator_config.get("intermediate_size", 2048),
+            num_attention_heads=generator_config.get("num_attention_heads", 8),
+            use_pretrained_latent_embeddings=generator_config.get("use_pretrained_latent_embeddings", True),
+            load_symb=datamodule_parameters.get("load_symb", True),
+            load_latent=datamodule_parameters.get("load_latent", True),
+            load_sentiments=datamodule_parameters.get("load_sentiments", True),
+            load_bert_from_ckpt=generator_config.get("load_bert_from_ckpt", False),
+            save_encoder_decoder_path=os.path.join(GENERATOR_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name"), "BERT"),
         )
 
-    device = torch.device(parameters.device)
+    device = torch.device(generator_config.get("device", "cuda"))
     model.to(device)
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
-    checkpoint_dir = os.path.join(CHECKPOINTS_PATH, parameters.dataset_name, parameters.training_name)
+    checkpoint_dir = os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name"))
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     checkpoint_callback = ModelCheckpoint(
@@ -106,14 +99,14 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     trainer = Trainer(
-        default_root_dir=os.path.join(GENERATOR_PATH, parameters.dataset_name, parameters.training_name),
+        default_root_dir=os.path.join(GENERATOR_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name")),
         devices=device_count,
         accelerator="gpu",
         profiler="simple",
         callbacks=[checkpoint_callback, lr_monitor],
         enable_checkpointing=True,
-        max_epochs=parameters.epochs,
-        max_steps=parameters.max_training_steps,
+        max_epochs=generator_config.get("epochs", 100),
+        max_steps=generator_config.get("max_training_steps", 100000),
         log_every_n_steps=max(100, min(25 * accumulate_grad_batches, 200)),
         val_check_interval=max(500, min(300 * accumulate_grad_batches, 1000)),
         limit_val_batches=64,
@@ -125,19 +118,20 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
     return {"Message": "Trained Generator"}
 
 
-def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
-    max_bars = parameters.max_bars
+def generate_sample_from_prompt(config_path: str):
+    """Generate a sample using parameters from the config file."""
+    # Load configuration
+    with open(config_path, "r") as f:
+        config = json.load(f)
 
-    output_dir = os.path.join(GENERATED_PATH, parameters.dataset_name)
+    generator_config = config.get("generator", {})
+    prompt_config = generator_config.get("generate", {})
+
+    output_dir = os.path.join(GENERATED_PATH, prompt_config.get("output_folder"))
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    generator_checkpoint = os.path.join(
-        CHECKPOINTS_PATH,
-        parameters.dataset_name,
-        parameters.training_name,
-        parameters.checkpoint_name,
-    )
+    generator_checkpoint = generator_config.get("checkpoint_path")
     model = load_generator_from_checkpoint(generator_checkpoint)
     model = model.to("cuda")
 
@@ -172,7 +166,7 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
     )
 
     batch = {
-        key: tensor.unsqueeze(0)[:, : parameters.initial_context]
+        key: tensor.unsqueeze(0)[:, : prompt_config.get("context_size", 256)]
         for key, tensor in representation.items()
         if key not in ["file", "sentiments_vector", "input_ids", "bar_ids", "position_ids"]
     }
@@ -184,7 +178,7 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
     # sentiments_vector = torch.tensor(sentiments_vector, dtype=torch.float32, device=torch.device("cuda")).expand(1, -1)  # device = model.device
     # sentiments_vector = None
 
-    sample = model.sample(batch, max_length=parameters.max_n_tokens, max_bars=max_bars)
+    sample = model.sample(batch, max_length=prompt_config.get("max_n_tokens", 1024), max_bars=prompt_config.get("max_bars", 16))
 
     xs_hat = sample["sequences"].detach().cpu()  # Generated
     events_hat = [model.vocab.decode(x) for x in xs_hat]  # Generated
@@ -197,6 +191,6 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters):
         print("ERROR: Could not convert events to midi:", err)
 
     if output_dir:
-        pm_hat.write(os.path.join(output_dir, f"{parameters.prompt_name}.mid"))  # Generated
+        pm_hat.write(os.path.join(output_dir, f"{prompt_config.get('prompt_name', 'generated_sample')}.mid"))  # Generated
 
     return {"Message": "Generated Sample"}

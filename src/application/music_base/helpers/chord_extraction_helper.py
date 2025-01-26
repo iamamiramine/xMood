@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.domain.constants.encoder.harmony_constants import (
+from domain.constants.encoder.harmony_constants import (
     get_chord_maps,
     get_chord_outsiders_1,
     get_chord_outsiders_2,

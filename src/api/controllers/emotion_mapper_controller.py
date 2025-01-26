@@ -1,10 +1,10 @@
 from fastapi import APIRouter
 
-from src.domain.models.emotion_mapper.emotion_mapper_model import (
+from domain.models.emotion_mapper.emotion_mapper_model import (
     EmotionMapperTrainingParameters,
     EmotionMapperGenerateParameters,
 )
-from src.application.emotion_mapper.services import emotion_mapper_service
+from application.emotion_mapper.services import emotion_mapper_service
 
 router = APIRouter()
 

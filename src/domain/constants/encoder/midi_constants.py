@@ -1,7 +1,18 @@
+import os
+import json
 import numpy as np
 
+# Load config file
+def load_midi_config():
+    config_path = os.path.join("shared", "assets", "config.json")
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config.get('midi', {}), config.get('dataloader', {})
+
+midi_config, datamodule_config = load_midi_config()
+
 # parameters for input representation
-DEFAULT_POS_PER_QUARTER = 12
+DEFAULT_POS_PER_QUARTER = midi_config.get('pos_per_quarter', 12)
 DEFAULT_VELOCITY_BINS = np.linspace(0, 128, 32 + 1, dtype=int)
 DEFAULT_DURATION_BINS = np.sort(
     np.concatenate(
@@ -22,9 +33,9 @@ DEFAULT_MEAN_PITCH_BINS = np.linspace(0, 128, 32 + 1)
 DEFAULT_MEAN_DURATION_BINS = np.logspace(0, 7, 32 + 1, base=2)  # log space between 1 and 128 positions (~2.5 bars)
 
 # parameters for output
-DEFAULT_RESOLUTION = 480
+DEFAULT_RESOLUTION = midi_config.get('resolution', 480)
 
 # maximum length of a single bar is 3*4 = 12 beats
-MAX_BAR_LENGTH = 3  # TODO: read from parameters
+MAX_BAR_LENGTH = midi_config.get('max_bar_length', 3)
 # maximum number of bars in a piece is 512 (this covers almost all sequences)
-MAX_N_BARS = 512  # TODO: read from parameters
+MAX_N_BARS = datamodule_config.get('max_bars', 512)

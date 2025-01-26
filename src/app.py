@@ -1,15 +1,15 @@
 from fastapi import FastAPI
 
-from src.api.controllers import (
+from api.controllers import (
     encoder_controller,
     music_base_controller,
     health_controller,
     feature_extraction_controller,
     generator_controller,
-    representation_controller,
     emotion_mapper_controller,
+    captioning_controller,
 )
-from src.handlers.exception_handler import add_exception_handlers
+from handlers.exception_handler import add_exception_handlers
 
 tags_metadata = [
     {
@@ -25,16 +25,16 @@ tags_metadata = [
         "description": "Encoder",
     },
     {
-        "name": "representation",
-        "description": "Representation",
-    },
-    {
         "name": "feature_extraction",
         "description": "Feature Extraction Module",
     },
     {
         "name": "emotion_mapper",
         "description": "Emotion Mapper",
+    },
+    {
+        "name": "captioning",
+        "description": "Captioning",
     },
     {
         "name": "generator",
@@ -69,12 +69,6 @@ app.include_router(
     responses={404: {"description": "Not found"}},
 )
 app.include_router(
-    representation_controller.router,
-    prefix="/representation",
-    tags=["representation"],
-    responses={404: {"description": "Not found"}},
-)
-app.include_router(
     feature_extraction_controller.router,
     prefix="/feature_extraction",
     tags=["feature_extraction"],
@@ -84,6 +78,12 @@ app.include_router(
     emotion_mapper_controller.router,
     prefix="/emotion_mapper",
     tags=["emotion_mapper"],
+    responses={404: {"description": "Not found"}},
+)
+app.include_router(
+    captioning_controller.router,
+    prefix="/captioning",
+    tags=["captioning"],
     responses={404: {"description": "Not found"}},
 )
 app.include_router(

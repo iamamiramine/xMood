@@ -9,39 +9,32 @@ import pretty_midi as pm
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
-from src.persistence.dataloader.repositories.dataloader_repository import (
+from persistence.dataloader.repositories.dataloader_repository import (
     save_async,
     async_load,
 )
-from src.application.encoder.helpers.encoder_helper import (
+from application.encoder.helpers.encoder_helper import (
     read_note_tempo,
     extract_downbeats,
     quantize_midi,
     group_items,
     extract_dominant_keys,
 )
-from src.application.feature_extraction.helpers.symbolic_features_helper import (
+from application.feature_extraction.helpers.symbolic_features_helper import (
     get_symbolic_features,
 )
-from src.application.dataloader.models.dataloader_model import DataloaderModule
-from src.application.feature_extraction.helpers.latent_features_helper import (
+from application.dataloader.models.dataloader_model import DataloaderModule
+from application.feature_extraction.helpers.latent_features_helper import (
     load_vae_from_checkpoint,
 )
-from src.domain.models.feature_extraction.feature_extraction_model import (
-    VQVAEParameters,
-    LatentRepresentationDatasetParameters,
-    SymbolicFeaturesParameters,
-    SymbolicFeaturesDatasetParameters,
-)
-from src.application.feature_extraction.models.vae_model import VqVaeModule
+from domain.models.feature_extraction.feature_extraction_model import SymbolicFeaturesParameters
+from application.feature_extraction.models.vae_model import VqVaeModule
 
-from src.domain.constants.paths_constants import (
+from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     VAE_PATH,
     MIDI_PATH,
-    CHORDS_PATH,
-    KEYS_PATH,
-    SYMBOLIC_FEATURES_PATH,
+    PROCESSED_PATH,
 )
 
 
@@ -51,17 +44,23 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
     else:
         midi = parameters.midi
 
+    # Determine the processed directory
+    if parameters.processed_dir:
+        # Use user-specified directory
+        processed_dir = parameters.processed_dir
+    else:
+        raise ValueError("processed_dir must be provided")
+
+    # Load processed data
+    processed_data = async_load(processed_dir, parameters.midi, "processed")
+
     note_items, tempo_items = read_note_tempo(midi)
     quantize_midi(midi, note_items, midi.resolution)
     downbeats = extract_downbeats(midi)
 
-    # Asynchronous file read for chords
-    chords = async_load(parameters.chords_out_dir, parameters.midi, "chords")
-    remi_chords = chords["remi_chords"]
-
-    # Asynchronous file read for keys
-    keys = async_load(parameters.keys_out_dir, parameters.midi, "keys")
-    remi_keys = keys["remi_keys"]
+    # Get chords and keys from processed data
+    remi_chords = processed_data["chords"]["remi_chords"]
+    remi_keys = processed_data["keys"]["remi_keys"]
 
     midi.tonal_plan = remi_keys
 
@@ -70,28 +69,23 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
     groups = extract_dominant_keys(groups)
     symbolic_features = get_symbolic_features(midi, groups)
 
-    sample = {"symbolic": symbolic_features}
+    # Update processed data with symbolic features
+    processed_data["symbolic_features"] = {"symbolic": symbolic_features}
 
     if parameters.save:
-        # Asynchronous saving function
-        save_async(parameters.description_out_dir, parameters.midi, sample, "symbolic")
-
-    # return True  # {"Message": "Extracted Symbolic Features"}
+        # Save back to the same processed file
+        save_async(processed_dir, parameters.midi, processed_data, "processed")
 
 
-async def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParameters) -> dict:
-    dataset_path = os.path.join(MIDI_PATH, parameters.dataset_name)
-    chords_out_dir = os.path.join(CHORDS_PATH, parameters.dataset_name)
-    keys_out_dir = os.path.join(KEYS_PATH, parameters.dataset_name)
-    description_out_dir = os.path.join(SYMBOLIC_FEATURES_PATH, parameters.dataset_name)
+async def extract_symbolic_features_dataset(dataset_name: str) -> dict:
+    dataset_path = MIDI_PATH
+    processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
 
     async def process_file(file_path: str) -> tuple[bool, str]:
         extract_symbolic_features(
             SymbolicFeaturesParameters(
                 midi=file_path,
-                chords_out_dir=chords_out_dir,
-                keys_out_dir=keys_out_dir,
-                description_out_dir=description_out_dir,
+                processed_dir=processed_dir,
                 save=True,
             )
         )
@@ -100,7 +94,6 @@ async def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetP
     # Create tasks for each file
     midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
     total_files = len(midi_files)
-    print(total_files, flush=True)
     processed = 0
 
     # Process files in batches
@@ -113,59 +106,60 @@ async def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetP
         results = await asyncio.gather(*batch_tasks, return_exceptions=False)
         processed += len(batch)
 
-    return {"Message": "Extracted Symbolic Features Dataset"}
+    return {"Message": "Extracted Description Dataset"}
 
 
-def train_vae(parameters: VQVAEParameters) -> dict:
-    with open("shared/assets/config.json", "r") as f:
+def train_vae(config_path: str) -> dict:
+    """Train a VAE model using parameters from the config file."""
+    # Load configuration
+    with open(config_path, "r") as f:
         config = json.load(f)
 
+    vae_config = config.get("vae", {})
     datamodule_parameters = config["dataloader"]
-    datamodule_parameters["load_latent"] = False
-    datamodule_parameters["load_symb"] = False
-
     datamodule_parameters["load_latent"] = False
     datamodule_parameters["load_symb"] = False
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    accumulate_grad_batches = parameters.target_batch_size // datamodule.batch_size
-    if parameters.load_from_checkpoint:
-        model = load_vae_from_checkpoint(parameters.checkpoint_dir)
+    accumulate_grad_batches = vae_config.get("target_batch_size", 256) // datamodule.batch_size
+    if vae_config.get("load_from_checkpoint", False):
+        model = load_vae_from_checkpoint(vae_config.get("checkpoint_dir"))
     else:
         model = VqVaeModule(
-            parameters.dataset_name,
-            parameters.d_model,
-            datamodule.context_size,
-            parameters.n_codes,
-            parameters.n_groups,
-            parameters.d_latent,
-            parameters.lr,
-            parameters.lr_schedule,
-            parameters.warmup_steps,
-            parameters.max_steps,
-            parameters.encoder_layers,
-            parameters.decoder_layers,
-            parameters.encoder_ffn_dim,
-            parameters.decoder_ffn_dim,
-            parameters.windowed_attention_pr,
-            parameters.max_lookahead,
-            parameters.disable_vq,
-            accumulate_grad_batches,
-            datamodule.max_positions,
-            parameters.automatic_optimization,
-            parameters.beta,
-            parameters.cycle_length,
-            parameters.position_embedding_type,
-            parameters.num_attention_heads,
-            parameters.decay,
-            parameters.eps,
-            parameters.restart_threshold,
+            dataset_name=config.get("dataloader", {}).get("dataset_name"),
+            d_model=vae_config.get("d_model", 512),
+            context_size=datamodule.context_size,
+            n_codes=vae_config.get("n_codes", 2048),
+            n_groups=vae_config.get("n_groups", 16),
+            d_latent=vae_config.get("d_latent", 1024),
+            lr=vae_config.get("lr", 1e-4),
+            lr_schedule=vae_config.get("lr_schedule", "const"),
+            warmup_steps=vae_config.get("warmup_steps", 4000),
+            max_steps=vae_config.get("max_steps", 100000000000000000000),
+            encoder_layers=vae_config.get("encoder_layers", 4),
+            decoder_layers=vae_config.get("decoder_layers", 6),
+            encoder_ffn_dim=vae_config.get("encoder_ffn_dim", 2048),
+            decoder_ffn_dim=vae_config.get("decoder_ffn_dim", 2048),
+            windowed_attention_pr=vae_config.get("windowed_attention_pr", 0.0),
+            max_lookahead=vae_config.get("max_lookahead", 4),
+            disable_vq=vae_config.get("disable_vq", False),
+            accumulate_grad_batches=accumulate_grad_batches,
+            max_positions=datamodule.max_positions,
+            automatic_optimization=vae_config.get("automatic_optimization", False),
+            beta=vae_config.get("beta", 0.02),
+            cycle_length=vae_config.get("cycle_length", 2000),
+            position_embedding_type=vae_config.get("position_embedding_type", "relative_key_query"),
+            num_attention_heads=vae_config.get("num_attention_heads", 8),
+            decay=vae_config.get("decay", 0.995),
+            eps=vae_config.get("eps", 1e-4),
+            restart_threshold=vae_config.get("restart_threshold", 0.99),
         )
-    device = torch.device(parameters.device)
+
+    device = torch.device(vae_config.get("device", "cuda"))
     model.to(device)
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
-    checkpoint_dir = os.path.join(CHECKPOINTS_PATH, parameters.dataset_name, parameters.training_name)
+    checkpoint_dir = os.path.join(CHECKPOINTS_PATH, vae_config.get("dataset_name"), vae_config.get("training_name"))
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     checkpoint_callback = ModelCheckpoint(
@@ -179,14 +173,14 @@ def train_vae(parameters: VQVAEParameters) -> dict:
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     trainer = Trainer(
-        default_root_dir=os.path.join(VAE_PATH, parameters.dataset_name, parameters.training_name),
+        default_root_dir=os.path.join(VAE_PATH, vae_config.get("dataset_name"), vae_config.get("training_name")),
         devices=device_count,
         accelerator="gpu",
         profiler="simple",
         callbacks=[checkpoint_callback, lr_monitor],
         enable_checkpointing=True,
-        max_epochs=parameters.epochs,
-        max_steps=parameters.max_training_steps,
+        max_epochs=vae_config.get("epochs", 100),
+        max_steps=vae_config.get("max_training_steps", 100000),
         log_every_n_steps=max(100, min(25 * accumulate_grad_batches, 200)),
         val_check_interval=max(500, min(300 * accumulate_grad_batches, 1000)),
         limit_val_batches=64,
@@ -199,11 +193,14 @@ def train_vae(parameters: VQVAEParameters) -> dict:
 
 
 def generate_latent_representations_dataset(
-    parameters: LatentRepresentationDatasetParameters,
+    config_path: str,
 ) -> dict:
-    with open("shared/assets/config.json", "r") as f:
+    """Generate latent representations using parameters from the config file."""
+    # Load configuration
+    with open(config_path, "r") as f:
         config = json.load(f)
 
+    vae_config = config.get("vae", {})
     datamodule_parameters = config["dataloader"]
     datamodule_parameters["load_latent"] = False
     datamodule_parameters["load_symb"] = False
@@ -215,19 +212,19 @@ def generate_latent_representations_dataset(
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    accumulate_grad_batches = parameters.target_batch_size // datamodule.batch_size
+    accumulate_grad_batches = vae_config.get("target_batch_size", 256) // datamodule.batch_size
     vae_checkpoint = os.path.join(
         CHECKPOINTS_PATH,
-        parameters.dataset_name,
-        parameters.training_name,
-        parameters.checkpoint_name,
+        config.get("dataloader", {}).get("dataset_name"),
+        vae_config.get("training_name"),
+        vae_config.get("checkpoint_name"),
     )
 
     model = load_vae_from_checkpoint(vae_checkpoint)
 
-    device = torch.device(parameters.device)
+    device = torch.device(vae_config.get("device", "cuda"))
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
-    checkpoint_dir = os.path.join(CHECKPOINTS_PATH, parameters.dataset_name, parameters.training_name)
+    checkpoint_dir = os.path.join(CHECKPOINTS_PATH, config.get("dataloader", {}).get("dataset_name"), vae_config.get("training_name"))
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     checkpoint_callback = ModelCheckpoint(
@@ -241,14 +238,14 @@ def generate_latent_representations_dataset(
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     trainer = Trainer(
-        default_root_dir=os.path.join(VAE_PATH, parameters.dataset_name, parameters.training_name),
+        default_root_dir=os.path.join(VAE_PATH, config.get("dataloader", {}).get("dataset_name"), vae_config.get("training_name")),
         devices=device_count,
         accelerator="gpu",
         profiler="simple",
         callbacks=[checkpoint_callback, lr_monitor],
         enable_checkpointing=True,
-        max_epochs=parameters.epochs,
-        max_steps=parameters.max_training_steps,
+        max_epochs=vae_config.get("epochs", 100),
+        max_steps=vae_config.get("max_training_steps", 100000),
         log_every_n_steps=max(100, min(25 * accumulate_grad_batches, 200)),
         val_check_interval=max(500, min(300 * accumulate_grad_batches, 1000)),
         limit_val_batches=64,

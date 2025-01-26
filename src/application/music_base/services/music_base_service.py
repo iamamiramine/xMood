@@ -8,14 +8,10 @@ import pretty_midi as pm
 import soundfile
 import fluidsynth
 
-pm.instrument._HAS_FLUIDSYNTH = True
-pm.instrument.fluidsynth = fluidsynth
-
-
-from src.persistence.dataloader.repositories.dataloader_repository import (
+from persistence.dataloader.repositories.dataloader_repository import (
     save_async,
 )
-from src.application.music_base.helpers.tonal_plan_helper import (
+from application.music_base.helpers.tonal_plan_helper import (
     evaluate_diatonic_pitch_set_distance,
     update_diatonic_pitch_set,
     compute_tonality_anchoring_cost,
@@ -24,21 +20,24 @@ from src.application.music_base.helpers.tonal_plan_helper import (
     compute_proximity_costs,
     detect_modulation_points,
 )
-from src.application.music_base.helpers.chord_extraction_helper import (
+from application.music_base.helpers.chord_extraction_helper import (
     get_candidate_chords,
     dynamic_chords,
     dedupe_chords,
 )
-from src.domain.constants.encoder.harmony_constants import (
+from domain.constants.encoder.harmony_constants import (
     get_all_major_minor_keys,
     get_all_major_minor_keys_chords,
     generate_webers_table,
     generate_chord_notes,
 )
-from src.domain.models.music_base.music_base_model import (
+from domain.models.music_base.music_base_model import (
     MusicBaseParameters,
     TonalPlanParameters,
 )
+
+pm.instrument._HAS_FLUIDSYNTH = True
+pm.instrument.fluidsynth = fluidsynth
 
 
 def synthesize_midi(file: str, out_dir: str) -> dict:

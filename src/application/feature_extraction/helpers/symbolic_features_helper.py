@@ -5,11 +5,11 @@ import numpy as np
 from pretty_midi import utilities as pm_utils
 
 # Local application imports - REMI encoding helpers
-from src.application.encoder.helpers.remi_helper import get_time_signature, get_key_signature, get_positions_per_bar
-from src.application.encoder.models.event_model import Event
+from application.encoder.helpers.remi_helper import get_time_signature, get_key_signature, get_positions_per_bar
+from application.encoder.models.event_model import Event
 
 # Constants - Feature binning defaults
-from src.domain.constants.encoder.midi_constants import (
+from domain.constants.encoder.midi_constants import (
     DEFAULT_NOTE_DENSITY_BINS,
     DEFAULT_MEAN_VELOCITY_BINS,
     DEFAULT_MEAN_PITCH_BINS,
@@ -17,7 +17,7 @@ from src.domain.constants.encoder.midi_constants import (
 )
 
 # Constants - Token types
-from src.domain.constants.encoder.token_constants import (
+from domain.constants.encoder.token_constants import (
     # Musical context tokens
     TIME_SIGNATURE_KEY,
     KEY_SIGNATURE_KEY,

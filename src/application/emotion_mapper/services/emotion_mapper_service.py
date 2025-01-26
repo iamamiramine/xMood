@@ -3,6 +3,7 @@ import os
 import random
 import json
 import pickle
+from itertools import chain
 
 # PyTorch and related imports
 import torch
@@ -10,33 +11,36 @@ from torch.utils.data import DataLoader
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
+from persistence.dataloader.repositories.dataloader_repository import async_load, save_async
+
 # Vocabulary models
-from src.application.encoder.models.vocab_model import RemiVocab, EmotionVocab
+from application.encoder.models.vocab_model import RemiVocab, EmotionVocab
 
 # Data loading and processing
-from src.application.dataloader.models.dataloader_model import (
+from application.dataloader.models.dataloader_model import (
     DataloaderModule,
     DataloaderDataset,
 )
-from src.application.dataloader.models.dataloader_seq_collator_model import SeqCollator
+from application.dataloader.models.dataloader_seq_collator_model import SeqCollator
 
 # Emotion mapper components
-from src.application.emotion_mapper.helpers.emotion_mapper_helper import (
+from application.emotion_mapper.helpers.emotion_mapper_helper import (
     load_emotion_mapper_from_checkpoint,
     convert_emotions_to_sequence,
     read_labels,
 )
-from src.application.emotion_mapper.models.emotion_mapper_model import EmotionMapper
+from application.emotion_mapper.models.emotion_mapper_model import EmotionMapper
 
 # Constants and configuration
-from src.domain.constants.paths_constants import (
+from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     EMOTION_MAPPING_PATH,
     LABELS_PATH,
+    PROCESSED_PATH,
 )
 
 # Domain models
-from src.domain.models.emotion_mapper.emotion_mapper_model import (
+from domain.models.emotion_mapper.emotion_mapper_model import (
     EmotionMapperTrainingParameters,
     EmotionMapperGenerateParameters,
 )
@@ -125,7 +129,7 @@ def train_emotion_mapper(parameters: EmotionMapperTrainingParameters) -> dict:
         )
         model = load_emotion_mapper_from_checkpoint(emotion_mapper_checkpoint)
     else:
-        model = EmotionMapper(feature_dim=parameters.feature_dim, d_model=parameters.d_model, num_heads=parameters.num_heads, max_bars=parameters.max_bars)
+        model = EmotionMapper(d_model=parameters.d_model, num_heads=parameters.num_heads)
 
     # Setup device
     device = torch.device(parameters.device)
@@ -172,12 +176,11 @@ def train_emotion_mapper(parameters: EmotionMapperTrainingParameters) -> dict:
 def generate_bar_emotions(parameters: EmotionMapperGenerateParameters) -> dict:
     """Generate bar-level emotions for pieces"""
 
-    # Setup output directory
-    output_dir = os.path.join(EMOTION_MAPPING_PATH, parameters.dataset_name, "generated")
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    processed_dir = os.path.join(PROCESSED_PATH, parameters.dataset_name)
+    if not os.path.exists(processed_dir):
+        os.makedirs(processed_dir)
 
-    print(f"Saving generated emotions to: {output_dir}")
+    print(f"Saving generated emotions to processed files in: {processed_dir}")
 
     # Load model from checkpoint
     emotion_mapper_checkpoint = os.path.join(
@@ -208,7 +211,10 @@ def generate_bar_emotions(parameters: EmotionMapperGenerateParameters) -> dict:
     coll = SeqCollator(context_size=-1)
     dataloader = DataLoader(dataset, batch_size=datamodule_parameters["batch_size"], collate_fn=coll)
 
-    emotion_vocab = EmotionVocab()
+    # Track statistics
+    processed = 0
+    successful = 0
+    errors = []
 
     # Generate bar-level emotions for each batch
     with torch.no_grad():
@@ -218,19 +224,34 @@ def generate_bar_emotions(parameters: EmotionMapperGenerateParameters) -> dict:
 
             # Save results
             for i, file in enumerate(bar_emotions):
-                output_file = os.path.join(output_dir, f"{os.path.basename(file)}_emotions.pkl")
-                result = {
-                    "file": file,
-                    "bar_emotion_vectors": bar_emotions[file]["predictions"].cpu().numpy()[0],
-                    "piece_emotion_vector": bar_emotions[file]["piece_emotions"],
-                    # "bar_emotion_tokens": [
-                    #     convert_emotions_to_sequence(emotions, idx) for idx, emotions in enumerate(bar_emotions[file]["predictions"].cpu().numpy()[0])
-                    # ],
-                    # "piece_emotion_tokens": convert_emotions_to_sequence(bar_emotions[file]["piece_emotions"].cpu().numpy()[0]),
-                    "avg_predictions": bar_emotions[file]["avg_predictions"],
-                }
-                # with open(output_file, "wb") as f:
-                #     pickle.dump(result, f)
-                # print(result, flush=True)
+                try:
+                    # Load existing processed data
+                    processed_data = async_load(processed_dir, file, "processed")
 
-    return {"Message": "Generated Bar-level Emotions"}
+                    # Skip if emotions already exist
+                    if "emotions" in processed_data:
+                        continue
+
+                    # Update processed data with emotions
+                    processed_data["emotions"] = {
+                        "bar_emotion_vectors": bar_emotions[file]["predictions"],
+                        "piece_emotion_vector": bar_emotions[file]["emotions_vector"],
+                        "bar_emotion_tokens": list(
+                            chain.from_iterable(convert_emotions_to_sequence(emotions, idx) for idx, emotions in enumerate(bar_emotions[file]["predictions"]))
+                        ),
+                        "piece_emotion_tokens": convert_emotions_to_sequence(bar_emotions[file]["emotions_vector"]),
+                        "avg_predictions": bar_emotions[file]["avg_predictions"],
+                    }
+
+                    # Save back to processed file
+                    save_async(processed_dir, file, processed_data, "processed")
+                    successful += 1
+
+                except Exception as e:
+                    errors.append(f"Error processing {os.path.basename(file)}: {str(e)}")
+
+                processed += 1
+                if processed % 10 == 0:
+                    print(f"Processed {processed} files", flush=True)
+
+    return {"Message": "Generated Bar-level Emotions", "Total Files": processed, "Successful": successful, "Failed": len(errors), "Errors": errors}

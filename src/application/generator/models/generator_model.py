@@ -10,8 +10,8 @@ import math
 
 from transformers import BertConfig, EncoderDecoderConfig, EncoderDecoderModel
 
-from src.application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
-from src.domain.constants.encoder.token_constants import PAD_TOKEN, EOS_TOKEN, BAR_KEY, POSITION_KEY, BOS_TOKEN
+from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
+from domain.constants.encoder.token_constants import PAD_TOKEN, EOS_TOKEN, BAR_KEY, POSITION_KEY, BOS_TOKEN
 
 
 class GroupEmbedding(nn.Module):

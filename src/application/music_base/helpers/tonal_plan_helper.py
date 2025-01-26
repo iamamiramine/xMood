@@ -4,7 +4,7 @@ import numpy as np
 
 import pretty_midi as pm
 
-from src.domain.constants.encoder.harmony_constants import (
+from domain.constants.encoder.harmony_constants import (
     sharp_to_natural,
     natural_to_sharp,
     get_major_minor_scales,

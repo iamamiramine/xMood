@@ -2,11 +2,8 @@ import asyncio
 
 from fastapi import APIRouter
 
-from src.application.encoder.services import encoder_service
-from src.domain.models.encoder.encoder_model import (
-    EncodeDatasetParameters,
-    EncodeParameters,
-)
+from application.encoder.services import encoder_service
+from domain.models.encoder.encoder_model import EncodeParameters
 
 router = APIRouter()
 
@@ -32,7 +29,7 @@ def encode_midi(parameters: EncodeParameters) -> dict:
 
 
 @router.post("/encode_dataset")
-def encode_dataset(parameters: EncodeDatasetParameters) -> dict:
+def encode_dataset(config_path: str) -> dict:
     """
     Description:
     ------------
@@ -40,7 +37,7 @@ def encode_dataset(parameters: EncodeDatasetParameters) -> dict:
 
     Parameters:
     -----------
-        dataset_name: str = ""
+        config: str
 
     Returns:
     --------
@@ -49,4 +46,4 @@ def encode_dataset(parameters: EncodeDatasetParameters) -> dict:
 
     """
     # return encoder_service.encode_dataset(parameters)
-    return asyncio.run(encoder_service.encode_dataset(parameters))
+    return asyncio.run(encoder_service.encode_dataset(config_path))

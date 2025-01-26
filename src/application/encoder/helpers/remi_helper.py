@@ -7,17 +7,16 @@ from pretty_midi.containers import TimeSignature
 from pretty_midi import utilities as pm_utils
 
 # Local application models
-from src.application.encoder.models.vocab_model import RemiVocab
-from src.application.encoder.models.event_model import Event
+from application.encoder.models.vocab_model import RemiVocab
+from application.encoder.models.event_model import Event
 
 # Constants - Harmony
-from src.domain.constants.encoder.harmony_constants import key_index
+from domain.constants.encoder.harmony_constants import key_index
 
 # Constants - Token types
-from src.domain.constants.encoder.token_constants import (
+from domain.constants.encoder.token_constants import (
     # Special tokens
     EOS_TOKEN,
-    
     # Musical feature tokens
     TIME_SIGNATURE_KEY,
     KEY_SIGNATURE_KEY,
@@ -32,7 +31,7 @@ from src.domain.constants.encoder.token_constants import (
 )
 
 # Constants - MIDI parameters
-from src.domain.constants.encoder.midi_constants import (
+from domain.constants.encoder.midi_constants import (
     # Discretization parameters
     DEFAULT_POS_PER_QUARTER,
     DEFAULT_VELOCITY_BINS,
@@ -94,11 +93,7 @@ def get_time_signature(midi: pretty_midi.PrettyMIDI, start: int) -> TimeSignatur
             time_sig = midi.time_signature_changes[-1]
         else:
             # If no time signatures defined, create default 4/4 signature
-            time_sig = TimeSignature(
-                numerator=4,      # 4 beats per measure
-                denominator=4,    # Quarter note gets one beat
-                time=0.0         # Start at beginning of piece
-            )
+            time_sig = TimeSignature(numerator=4, denominator=4, time=0.0)  # 4 beats per measure  # Quarter note gets one beat  # Start at beginning of piece
 
     return time_sig
 
@@ -144,7 +139,7 @@ def get_key_signature(midi: pretty_midi.PrettyMIDI, start: int) -> str:
         # Convert time points to ticks for comparison with start parameter
         # Use end time of current signature and start time of next signature
         # to define the range where current signature is active
-        curr_end = midi.time_to_tick(curr_sig.end)    # End time of current key
+        curr_end = midi.time_to_tick(curr_sig.end)  # End time of current key
         next_start = midi.time_to_tick(next_sig.start)  # Start time of next key
 
         # Check if start falls within the current key signature's range
@@ -208,8 +203,7 @@ def get_ticks_per_bar(midi: pretty_midi.PrettyMIDI, start: int) -> int:
     return midi.resolution * quarters_per_bar
 
 
-def get_positions_per_bar(midi: pretty_midi.PrettyMIDI, start: int | None = None, 
-                      time_sig: TimeSignature | None = None) -> int:
+def get_positions_per_bar(midi: pretty_midi.PrettyMIDI, start: int | None = None, time_sig: TimeSignature | None = None) -> int:
     """
     Calculate the number of discrete positions within a bar based on time signature.
 
@@ -332,10 +326,10 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
         ['Bar_1', 'Time_4/4', 'Key_C:major']
     """
     # Initialize event list and tracking variables
-    events = []                  # Will store all REMI events
-    n_downbeat = 0              # Counter for bar numbers
-    current_chord = None        # Track current chord for chord changes
-    current_tempo = None        # Track current tempo for tempo changes
+    events = []  # Will store all REMI events
+    n_downbeat = 0  # Counter for bar numbers
+    current_chord = None  # Track current chord for chord changes
+    current_tempo = None  # Track current tempo for tempo changes
 
     # Process each bar group
     for i in range(len(groups)):
@@ -349,79 +343,34 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
             raise ValueError("Invalid REMI file: There must be at least 1 position per bar.")
 
         # Add bar marker event
-        events.append(
-            Event(
-                name=BAR_KEY,
-                time=None,           # Bar markers don't need specific time
-                value=str(n_downbeat),
-                text=str(n_downbeat)
-            )
-        )
+        events.append(Event(name=BAR_KEY, time=None, value=str(n_downbeat), text=str(n_downbeat)))  # Bar markers don't need specific time
 
         # Add time signature event
         time_sig = get_time_signature(midi, bar_st)
         events.append(
-            Event(
-                name=TIME_SIGNATURE_KEY,
-                time=None,
-                value=f"{time_sig.numerator}/{time_sig.denominator}",
-                text=f"{time_sig.numerator}/{time_sig.denominator}"
-            )
+            Event(name=TIME_SIGNATURE_KEY, time=None, value=f"{time_sig.numerator}/{time_sig.denominator}", text=f"{time_sig.numerator}/{time_sig.denominator}")
         )
 
         # Add key signature event
         key_sig = get_key_signature(midi, bar_st)
-        events.append(
-            Event(
-                name=KEY_SIGNATURE_KEY,
-                time=None,
-                value=str(key_sig),
-                text=str(key_sig)
-            )
-        )
+        events.append(Event(name=KEY_SIGNATURE_KEY, time=None, value=str(key_sig), text=str(key_sig)))
 
         # If there's a current chord, add it at the start of the bar
         if current_chord is not None:
             # Add position event (start of bar)
-            events.append(
-                Event(
-                    name=POSITION_KEY,
-                    time=0,
-                    value="0",
-                    text=f"1/{positions_per_bar}"  # Human-readable position
-                )
-            )
+            events.append(Event(name=POSITION_KEY, time=0, value="0", text=f"1/{positions_per_bar}"))  # Human-readable position
             # Add chord event
-            events.append(
-                Event(
-                    name=CHORD_KEY,
-                    time=current_chord.start,
-                    value=current_chord.pitch,
-                    text=str(current_chord.pitch)
-                )
-            )
+            events.append(Event(name=CHORD_KEY, time=current_chord.start, value=current_chord.pitch, text=str(current_chord.pitch)))
 
         # If there's a current tempo, add it at the start of the bar
         if current_tempo is not None:
             # Add position event (start of bar)
-            events.append(
-                Event(
-                    name=POSITION_KEY,
-                    time=0,
-                    value="0",
-                    text=f"1/{positions_per_bar}"
-                )
-            )
+            events.append(Event(name=POSITION_KEY, time=0, value="0", text=f"1/{positions_per_bar}"))
             # Add tempo event
             tempo = current_tempo.pitch
             index = np.argmin(abs(DEFAULT_TEMPO_BINS - tempo))  # Find closest quantized tempo
             events.append(
-                Event(
-                    name=TEMPO_KEY,
-                    time=current_tempo.start,
-                    value=index,
-                    text=f"{tempo}/{DEFAULT_TEMPO_BINS[index]}"  # Original and quantized tempo
-                )
+                Event(name=TEMPO_KEY, time=current_tempo.start, value=index, text=f"{tempo}/{DEFAULT_TEMPO_BINS[index]}")  # Original and quantized tempo
             )
 
         # Calculate position grid for this bar
@@ -434,12 +383,7 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
         for item in groups[i][1:-1]:
             # Calculate quantized position for this event
             index = np.argmin(abs(flags - item.start))  # Find closest position
-            pos_event = Event(
-                name=POSITION_KEY,
-                time=item.start,
-                value=str(index),
-                text=f"{index + 1}/{positions_per_bar}"
-            )
+            pos_event = Event(name=POSITION_KEY, time=item.start, value=str(index), text=f"{index + 1}/{positions_per_bar}")
 
             if item.name == "Note":
                 # Process note event
@@ -450,14 +394,7 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
                     name = "drum"
                 else:
                     name = pm_utils.program_to_instrument_name(item.instrument)
-                events.append(
-                    Event(
-                        name=INSTRUMENT_KEY,
-                        time=item.start,
-                        value=name,
-                        text=str(name)
-                    )
-                )
+                events.append(Event(name=INSTRUMENT_KEY, time=item.start, value=name, text=str(name)))
 
                 # Add pitch event
                 events.append(
@@ -465,45 +402,24 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
                         name=PITCH_KEY,
                         time=item.start,
                         value=("drum_" + str(item.pitch)) if name == "drum" else item.pitch,
-                        text=pm_utils.note_number_to_name(item.pitch)
+                        text=pm_utils.note_number_to_name(item.pitch),
                     )
                 )
 
                 # Add velocity event (quantized)
                 velocity_index = np.argmin(abs(DEFAULT_VELOCITY_BINS - item.velocity))
-                events.append(
-                    Event(
-                        name=VELOCITY_KEY,
-                        time=item.start,
-                        value=velocity_index,
-                        text=f"{item.velocity}/{DEFAULT_VELOCITY_BINS[velocity_index]}"
-                    )
-                )
+                events.append(Event(name=VELOCITY_KEY, time=item.start, value=velocity_index, text=f"{item.velocity}/{DEFAULT_VELOCITY_BINS[velocity_index]}"))
 
                 # Add duration event (quantized)
                 duration = tick_to_position(midi, item.end - item.start)
                 index = np.argmin(abs(DEFAULT_DURATION_BINS - duration))
-                events.append(
-                    Event(
-                        name=DURATION_KEY,
-                        time=item.start,
-                        value=index,
-                        text=f"{duration}/{DEFAULT_DURATION_BINS[index]}"
-                    )
-                )
+                events.append(Event(name=DURATION_KEY, time=item.start, value=index, text=f"{duration}/{DEFAULT_DURATION_BINS[index]}"))
 
             elif item.name == "Chord":
                 # Process chord event (only if it's different from current)
                 if current_chord is None or item.pitch != current_chord.pitch:
                     events.append(pos_event)
-                    events.append(
-                        Event(
-                            name=CHORD_KEY,
-                            time=item.start,
-                            value=item.pitch,
-                            text=str(item.pitch)
-                        )
-                    )
+                    events.append(Event(name=CHORD_KEY, time=item.start, value=item.pitch, text=str(item.pitch)))
                     current_chord = item
 
             elif item.name == "Tempo":
@@ -512,14 +428,7 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
                     events.append(pos_event)
                     tempo = item.pitch
                     index = np.argmin(abs(DEFAULT_TEMPO_BINS - tempo))
-                    events.append(
-                        Event(
-                            name=TEMPO_KEY,
-                            time=item.start,
-                            value=index,
-                            text=f"{tempo}/{DEFAULT_TEMPO_BINS[index]}"
-                        )
-                    )
+                    events.append(Event(name=TEMPO_KEY, time=item.start, value=index, text=f"{tempo}/{DEFAULT_TEMPO_BINS[index]}"))
                     current_tempo = item
 
     # Create human-readable event strings
@@ -528,8 +437,7 @@ def get_remi_events(midi: pretty_midi.PrettyMIDI, groups: list) -> tuple[list[Ev
     return events, readable_events
 
 
-def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int] = (4, 4), 
-           polyphony_limit: int = 16) -> pretty_midi.PrettyMIDI:
+def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int] = (4, 4), polyphony_limit: int = 16) -> pretty_midi.PrettyMIDI:
     """
     Convert a sequence of REMI events back into a MIDI file.
 
@@ -562,6 +470,7 @@ def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int]
         signature change event and calculates time differences relative to that reference
         point. This helps maintain accurate timing across tempo and meter changes.
     """
+
     def _get_time(reference: dict, bar: int, pos: int) -> float:
         """
         Calculate absolute time in seconds for a given bar and position.
@@ -587,28 +496,28 @@ def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int]
         """
         time_sig = reference["time_sig"]
         num, denom = time_sig.numerator, time_sig.denominator
-        
+
         # Calculate quarters per bar based on time signature
         # For example, 4/4 = 4 quarters, 6/8 = 3 quarters
         qpb = 4 * num / denom
-        
+
         # Get reference position
         ref_pos = reference["pos"]
-        
+
         # Calculate distance in bars from reference
         d_bars = bar - ref_pos[0]
-        
+
         # Calculate total position difference:
         # 1. Position difference within the bar
         # 2. Add complete bars' worth of positions
         d_pos = (pos - ref_pos[1]) + d_bars * qpb * DEFAULT_POS_PER_QUARTER
-        
+
         # Convert position difference to quarter notes
         d_quarters = d_pos / DEFAULT_POS_PER_QUARTER
-        
+
         # Convert quarters to seconds based on tempo
         dt = d_quarters / reference["tempo"] * 60
-        
+
         # Return absolute time by adding to reference time
         return reference["time"] + dt
 
@@ -620,7 +529,7 @@ def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int]
 
     # Create MIDI file with initial tempo
     pm = pretty_midi.PrettyMIDI(initial_tempo=bpm)
-    
+
     # Set up initial time signature
     num, denom = time_signature
     pm.time_signature_changes.append(pretty_midi.TimeSignature(num, denom, 0))
@@ -632,16 +541,16 @@ def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int]
     # Initialize timeline reference point
     # This tracks the last tempo/time signature change for timing calculations
     last_tl_event = {
-        "time": 0,              # Current time in seconds
-        "pos": (0, 0),         # Current (bar, position)
+        "time": 0,  # Current time in seconds
+        "pos": (0, 0),  # Current (bar, position)
         "time_sig": current_time_sig,  # Current time signature
-        "tempo": bpm           # Current tempo
+        "tempo": bpm,  # Current tempo
     }
 
     # Initialize bar counter and note tracking
-    bar = -1                   # Start before first bar
-    n_notes = 0               # Count total notes added
-    polyphony_control = {}    # Track simultaneous notes per position
+    bar = -1  # Start before first bar
+    n_notes = 0  # Count total notes added
+    polyphony_control = {}  # Track simultaneous notes per position
 
     # Process each event in sequence
     for i, event in enumerate(events):
@@ -664,7 +573,7 @@ def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int]
                 # Parse new time signature
                 num, denom = events[i + 1].split("_")[-1].split("/")
                 num, denom = int(num), int(denom)
-                
+
                 # Only create new time signature if it's different
                 current_time_sig = last_tl_event["time_sig"]
                 if num != current_time_sig.numerator or denom != current_time_sig.denominator:
@@ -702,23 +611,24 @@ def remi2midi(events: list[str], bpm: int = 120, time_signature: tuple[int, int]
                 last_tl_event["tempo"] = tempo
 
         # Handle note events
-        elif (i + 4 < len(events) and
-              f"{POSITION_KEY}_" in events[i] and
-              f"{INSTRUMENT_KEY}_" in events[i + 1] and
-              f"{PITCH_KEY}_" in events[i + 2] and
-              f"{VELOCITY_KEY}_" in events[i + 3] and
-              f"{DURATION_KEY}_" in events[i + 4]):
-            
+        elif (
+            i + 4 < len(events)
+            and f"{POSITION_KEY}_" in events[i]
+            and f"{INSTRUMENT_KEY}_" in events[i + 1]
+            and f"{PITCH_KEY}_" in events[i + 2]
+            and f"{VELOCITY_KEY}_" in events[i + 3]
+            and f"{DURATION_KEY}_" in events[i + 4]
+        ):
             # Get position
             position = int(events[i].split("_")[-1])
-            
+
             # Initialize polyphony tracking for new positions
             if not position in polyphony_control[bar]:
                 polyphony_control[bar][position] = {}
 
             # Get instrument
             instrument_name = events[i + 1].split("_")[-1]
-            
+
             # Initialize polyphony tracking for new instruments
             if instrument_name not in polyphony_control[bar][position]:
                 polyphony_control[bar][position][instrument_name] = 0

@@ -2,7 +2,6 @@ import glob
 import math
 import os
 import pickle
-import asyncio
 
 import torch
 from lightning import LightningDataModule
@@ -12,21 +11,16 @@ from torch.utils.data import IterableDataset, DataLoader
 # from torchdata.datapipes.iter import IterableWrapper
 from torch.utils.data.datapipes.iter import IterableWrapper
 
-from src.application.representation.services.representation_services import (
+from application.dataloader.helper.dataloader_helper import (
     represent_encoding,
 )
-from src.persistence.dataloader.repositories.dataloader_repository import CPU_Unpickler
-from src.application.dataloader.models.dataloader_seq_collator_model import SeqCollator
-from src.application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
-from src.domain.constants.encoder.token_constants import PAD_TOKEN
-from src.domain.constants.paths_constants import (
-    ENCODINGS_PATH,
-    DATALOADER_PATH,
-    LATENTS_PATH,
+from application.dataloader.models.dataloader_seq_collator_model import SeqCollator
+from application.emotion_mapper.helpers.emotion_mapper_helper import read_label_for_midi
+from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
+from domain.constants.encoder.token_constants import PAD_TOKEN
+from domain.constants.paths_constants import (
     MIDI_PATH,
-    SYMBOLIC_FEATURES_PATH,
-    REPRESENTATIONS_PATH,
-    LABELS_PATH,
+    PROCESSED_PATH,
 )
 
 
@@ -63,11 +57,13 @@ class DataloaderModule(LightningDataModule):
         load_latent,
         load_symb,
         load_emotions,
+        encode=False,
+        caption=False,
     ):
         super().__init__()
 
         self.midi_files = glob.glob(
-            os.path.join(os.path.join(MIDI_PATH, dataset_name), "**/*.mid"),
+            os.path.join(MIDI_PATH, "**/*.mid"),
             recursive=True,
         )
         self.dataset_name = dataset_name
@@ -85,6 +81,8 @@ class DataloaderModule(LightningDataModule):
         self.load_latent = load_latent
         self.load_symb = load_symb
         self.load_emotions = load_emotions
+        self.encode = encode
+        self.caption = caption
         self.vocab = RemiVocab()
 
         self.dataset_parameters = {
@@ -104,6 +102,8 @@ class DataloaderModule(LightningDataModule):
             "load_latent": self.load_latent,
             "load_symb": self.load_symb,
             "load_emotions": self.load_emotions,
+            "encode": self.encode,
+            "caption": self.caption,
         }
 
     def setup(self, stage=None):
@@ -126,8 +126,12 @@ class DataloaderModule(LightningDataModule):
         self.train_ds = IterableWrapper(self.train_ds)
         self.train_ds.shuffle(buffer_size=2048)
 
-        self.collator = SeqCollator(pad_token=self.vocab.to_i(PAD_TOKEN), context_size=self.context_size)
-        self.collator_pred = SeqCollator(pad_token=self.vocab.to_i(PAD_TOKEN), context_size=-1)
+        if self.encode:
+            self.collator = None
+            self.collator_pred = None
+        else:
+            self.collator = SeqCollator(pad_token=self.vocab.to_i(PAD_TOKEN), context_size=self.context_size)
+            self.collator_pred = SeqCollator(pad_token=self.vocab.to_i(PAD_TOKEN), context_size=-1)
 
     def train_dataloader(self):
         return DataLoader(
@@ -189,6 +193,8 @@ class DataloaderDataset(IterableDataset):
         load_latent,
         load_symb,
         load_emotions,
+        encode=False,
+        caption=False,
     ):
         self.files = files
         self.dataset_name = dataset_name
@@ -207,7 +213,9 @@ class DataloaderDataset(IterableDataset):
         self.load_latent = load_latent
         self.load_symb = load_symb
         self.load_emotions = load_emotions
-        self.desc_vocab = SymbolicFeaturesVocab()
+        self.encode = encode
+        self.caption = caption
+        self.symb_vocab = SymbolicFeaturesVocab()
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
@@ -217,72 +225,65 @@ class DataloaderDataset(IterableDataset):
 
         for i in range(split_len):
             try:
-                encoding_file = os.path.join(
-                    str(ENCODINGS_PATH),
+                if self.encode:
+                    # For encoding mode, just yield the file path
+                    yield {"file": self.split[i]}
+                    continue
+
+                # Load processed data
+                processed_file = os.path.join(
+                    str(PROCESSED_PATH),
                     self.dataset_name,
-                    f"{os.path.basename((self.split[i]))}_encoding.pkl",
+                    f"{os.path.basename((self.split[i]))}_processed.pkl",
                 )
-                encoding = pickle.load(open(encoding_file, "rb"))
-            except FileNotFoundError as err:
-                print(err)
-                # raise err
-                continue
-            if self.load_symb:
-                try:
-                    symb_file = os.path.join(
-                        str(SYMBOLIC_FEATURES_PATH),
-                        self.dataset_name,
-                        f"{os.path.basename((self.split[i]))}_symbolic.pkl",
-                    )
-                    symb = pickle.load(open(symb_file, "rb"))
-                    symbolic = symb["symbolic"]
-                except FileNotFoundError as err:
-                    print(err)
-                    # raise err
+                processed_data = pickle.load(open(processed_file, "rb"))
+
+                if self.caption:
+                    # For captioning mode, yield only the required features
+                    x = {"file": os.path.basename(self.split[i])}
+
+                    # Get symbolic features
+                    if "symbolic_features" in processed_data:
+                        x["note_density"] = processed_data["symbolic_features"]["note_density"]
+                        x["mean_velocity"] = processed_data["symbolic_features"]["mean_velocity"]
+                        x["mean_pitch"] = processed_data["symbolic_features"]["mean_pitch"]
+                        x["mean_duration"] = processed_data["symbolic_features"]["mean_duration"]
+                        x["time_signature"] = processed_data["symbolic_features"]["time_signature"]
+                        x["key_signature"] = processed_data["symbolic_features"]["key_signature"]
+                        x["chords"] = processed_data["symbolic_features"]["chords"]
+                        x["instruments"] = processed_data["symbolic_features"]["instruments"]
+
+                    # Get metadata and emotions
+                    midi_labels_df, label_columns = read_label_for_midi(self.dataset_name, x["file"])
+                    if midi_labels_df is not None:
+                        x["emotions"] = midi_labels_df[label_columns].values.flatten().tolist()  # TODO: Convert to tokens
+                        if "genre" in midi_labels_df.columns:
+                            x["genre"] = midi_labels_df["genre"].values[0]
+                        if "composer" in midi_labels_df.columns:
+                            x["composer"] = midi_labels_df["composer"].values[0]
+
+                    yield x
                     continue
-            else:
+
+                # Get encoding
+                encoding = processed_data["encoding"]
+
+                # Get symbolic features if needed
                 symbolic = None
-            if self.load_latent:
-                try:
-                    latents_path = os.path.join(
-                        str(LATENTS_PATH),
-                        self.dataset_name,
-                        f"{os.path.basename((self.split[i]))}_latents.pkl",
-                    )
-                    latents_file = CPU_Unpickler(open(latents_path, "rb")).load()
-                    latents = latents_file["latents"]
-                    codes = latents_file["codes"]
-                except FileNotFoundError as err:
-                    print(err)
-                    # raise err
-                    continue
-            else:
+                if self.load_symb and "symbolic_features" in processed_data:
+                    symbolic = processed_data["symbolic_features"]["symbolic"]
+
+                # Get latents if needed
                 latents = None
                 codes = None
+                if self.load_latent and "latents" in processed_data:
+                    latents = processed_data["latents"]["latents"]
+                    codes = processed_data["latents"]["codes"]
 
-            file = os.path.basename(self.split[i])
-            events = encoding["events"]
+                # Get or generate representation
+                file = os.path.basename(self.split[i])
+                events = encoding["events"]
 
-            if os.path.isfile(
-                os.path.join(
-                    REPRESENTATIONS_PATH,
-                    self.dataset_name,
-                    f"{os.path.basename(file)}_representation.pkl",
-                )
-            ):
-                x = pickle.load(
-                    open(
-                        os.path.join(
-                            REPRESENTATIONS_PATH,
-                            self.dataset_name,
-                            f"{os.path.basename(file)}_representation.pkl",
-                        ),
-                        "rb",
-                    )
-                )
-            else:
-                if not os.path.exists(os.path.join(REPRESENTATIONS_PATH, self.dataset_name)):
-                    os.makedirs(os.path.join(REPRESENTATIONS_PATH, self.dataset_name))
                 x = represent_encoding(
                     file,
                     self.dataset_name,
@@ -296,8 +297,14 @@ class DataloaderDataset(IterableDataset):
                     latents,
                     codes,
                     symbolic,
-                    save=True,
-                    out_dir=os.path.join(REPRESENTATIONS_PATH, self.dataset_name),
+                    save=False,
                 )
+
+            except FileNotFoundError as err:
+                print(err)
+                continue
+            except Exception as err:
+                print(f"Error loading {os.path.basename(self.split[i])}: {str(err)}")
+                continue
 
             yield x

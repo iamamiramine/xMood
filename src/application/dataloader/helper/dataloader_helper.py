@@ -1,94 +1,21 @@
-import os
 import torch
 
-from src.application.emotion_mapper.helpers.emotion_mapper_helper import read_label_for_midi
-from src.persistence.dataloader.repositories.dataloader_repository import (
+from application.emotion_mapper.helpers.emotion_mapper_helper import read_label_for_midi
+from persistence.dataloader.repositories.dataloader_repository import (
     save_async,
-    async_load,
 )
-from src.domain.constants.paths_constants import (
-    SYMBOLIC_FEATURES_PATH,
-    LATENTS_PATH,
-    ENCODINGS_PATH,
-    LABELS_PATH,
-)
-from src.domain.models.representation.representation_model import (
-    RepresentationParameters,
-)
-from src.persistence.dataloader.repositories.dataloader_repository import CPU_Unpickler
-from src.application.encoder.helpers.vocab_helper import (
+from application.encoder.helpers.vocab_helper import (
     get_positions,
     get_bars,
     mask_bar_tokens,
     get_bos_eos_events,
 )
-from src.application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
-from src.domain.constants.encoder.token_constants import (
+from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
+from domain.constants.encoder.token_constants import (
     BAR_KEY,
     BOS_TOKEN,
     EOS_TOKEN,
 )
-
-
-def run_representation(parameters: RepresentationParameters):
-    try:
-        encoding_dir = os.path.join(
-            str(ENCODINGS_PATH),
-            parameters.dataset_name,
-        )
-        encoding = async_load(encoding_dir, parameters.midi, "encoding")
-        events = encoding["events"]
-    except ValueError as err:
-        print(err)
-
-    if parameters.load_symb:
-        try:
-            symb_dir = os.path.join(
-                str(SYMBOLIC_FEATURES_PATH),
-                parameters.dataset_name,
-            )
-            symb = async_load(symb_dir, parameters.midi, "symbolic")
-            symbolic = symb["symbolic"]
-        except ValueError as err:
-            print(err)
-    else:
-        symbolic = None
-
-    if parameters.load_latent:
-        try:
-            latents_path = os.path.join(
-                str(LATENTS_PATH),
-                parameters.dataset_name,
-                f"{os.path.basename((parameters.midi))}_latents.pkl",
-            )
-            with open(latents_path, "rb") as f:
-                latents_file = CPU_Unpickler(f).load()
-
-            latents = latents_file["latents"]
-            codes = latents_file["codes"]
-        except ValueError as err:
-            print(err)
-    else:
-        latents = None
-        codes = None
-
-    return represent_encoding(
-        parameters.midi,
-        parameters.dataset_name,
-        parameters.context_size,
-        parameters.max_bars,
-        parameters.max_positions,
-        parameters.bar_token_mask,
-        parameters.max_bars_per_context,
-        parameters.max_contexts_per_file,
-        events=events,
-        latents=latents,
-        codes=codes,
-        symbolic=symbolic,
-        save=parameters.save,
-        out_dir=parameters.out_dir,
-        api_call=parameters.api_call,
-    )
 
 
 def represent_encoding(
@@ -107,6 +34,7 @@ def represent_encoding(
     save=False,
     out_dir="",
     api_call=False,
+    processed_data=None,
 ):
     vocab = RemiVocab()
     bars, bar_ids = get_bars(events, include_ids=True)
@@ -196,11 +124,13 @@ def represent_encoding(
 
             if context_size > 0:
                 start, end = start_idx, start_idx + context_size + 1
-                x["symbolic"] = symb_ids[start:end]
+                x["symbolic_ids"] = symb_ids[start:end]
                 x["symb_bar_ids"] = symb_bar_ids[start:end]
+                x["symbolic"] = symbolic[start:end]
             else:
-                x["symbolic"] = symb_ids[start:]
+                x["symbolic_ids"] = symb_ids[start:]
                 x["symb_bar_ids"] = symb_bar_ids[start:]
+                x["symbolic"] = symbolic[start:]
 
         if latents is not None:
             x["latents"] = latents
@@ -211,6 +141,12 @@ def represent_encoding(
         x["emotions_vector"] = emotions_vector
 
         if save:
-            save_async(out_dir, midi, x, "_representation")
+            if processed_data is not None:
+                # Update the processed file with the representation
+                processed_data["representation"] = x
+                save_async(out_dir, midi, processed_data, "processed")
+            else:
+                # Fallback to old behavior if processed_data not provided
+                save_async(out_dir, midi, x, "processed")
 
         return x if not api_call else {"Message": "Represented Encoding"}

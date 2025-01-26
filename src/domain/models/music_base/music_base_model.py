@@ -2,7 +2,7 @@ from fastapi import Query
 
 from typing import Annotated, Tuple, Optional
 
-from src.domain.models.base_model import BaseEnum
+from domain.models.base_model import BaseEnum
 from pydantic import BaseModel
 
 

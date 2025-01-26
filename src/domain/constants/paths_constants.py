@@ -4,20 +4,26 @@ import os
 with open(os.path.join("shared", "assets", "paths.json")) as file:
     paths = json.load(file)
 
+with open(os.path.join("shared", "assets", "config.json")) as file:
+    config = json.load(file)
+
 ROOT_OUTPUT = paths["ROOT_OUTPUT"]
 DATASETS_PATH = paths["DATASETS_PATH"]
 
-MIDI_PATH = f"{DATASETS_PATH}/midi/"
-LABELS_PATH = f"{DATASETS_PATH}/labels/"
+DATASET_NAME = config["dataloader"]["dataset_name"]
 
-DATALOADER_PATH = f"{ROOT_OUTPUT}/dataloader/"
+MIDI_PATH = f"{DATASETS_PATH}/{DATASET_NAME}/midi/"
+LABELS_PATH = f"{DATASETS_PATH}/{DATASET_NAME}/labels/"
+
+PROCESSED_PATH = f"{ROOT_OUTPUT}/processed/"
+CHECKPOINTS_PATH = f"{ROOT_OUTPUT}/checkpoints/"
+GENERATED_PATH = f"{ROOT_OUTPUT}/generated/"
+
 
 CHORDS_PATH = f"{ROOT_OUTPUT}/chords/"
 KEYS_PATH = f"{ROOT_OUTPUT}/keys/"
 
 ENCODINGS_PATH = f"{ROOT_OUTPUT}/encodings/"
-
-CHECKPOINTS_PATH = f"{ROOT_OUTPUT}/checkpoints/"
 
 SYMBOLIC_FEATURES_PATH = f"{ROOT_OUTPUT}/symbolic_features/"
 
@@ -31,4 +37,3 @@ FEATURES_PATH = f"{ROOT_OUTPUT}/features/"
 EMOTION_MAPPING_PATH = f"{ROOT_OUTPUT}/emotion_mapping/"
 
 GENERATOR_PATH = f"{ROOT_OUTPUT}/generator/"
-GENERATED_PATH = f"{ROOT_OUTPUT}/generated/"

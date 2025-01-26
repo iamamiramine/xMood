@@ -1,6 +1,11 @@
 {
+  "midi": {
+    "pos_per_quarter": 12,
+    "resolution": 480,
+    "max_bar_length": 3
+  },
   "dataloader": {
-    "dataset_name": "5_Emotions",
+    "dataset_name": "Emotion4MIDI_Sample",
     "context_size": 512,
     "max_positions": 2048,
     "max_bars": 512,
@@ -20,18 +25,75 @@
       0.1
     ]
   },
-  "__descriptions__": {
-    "dataset_name": "Name of Dataset",
-    "context_size": "Number of tokens in the context to be passed to the auto-encoder",
-    "max_positions": "Maximum position tokens in an input midi file",
-    "max_bars": "Maximum bars in an input midi file",
-    "max_bars_per_context": "Add <bos> and <eos> to each context if contexts are limited to a certain number of bars",
-    "max_contexts_per_file": "Maximum contexts in an input midi file after encoding",
-    "bar_token_mask": "Bar masking token",
-    "bar_token_idx": "Bar token index",
-    "batch_size": "Batch Size",
-    "num_workers": "Number of workers to load the dataset",
-    "pin_memory": "Whether to use pinned memory for loading data",
-    "train_val_test_split": "Split percentages for the dataset (train, validation, test)"
+  "encoder": {
+    "alpha": 0.016,
+    "beta": 0.3,
+    "gamma": 0.4,
+    "c": 12,
+    "w": 4,
+    "batch_size": 10
+  },
+  "generator": {
+    "training_name": "default",
+    "load_from_checkpoint": false,
+    "checkpoint_path": "",
+    "target_batch_size": 256,
+    "device": "cuda",
+    "epochs": 100,
+    "max_training_steps": 100000,
+    "lr": 1e-4,
+    "lr_schedule": "const",
+    "warmup_steps": 4000,
+    "max_steps": 100000000000000000000,
+    "encoder_layers": 6,
+    "decoder_layers": 6,
+    "intermediate_size": 2048,
+    "num_attention_heads": 8,
+    "use_pretrained_latent_embeddings": true,
+    "load_bert_from_ckpt": false,
+    "generate": {
+      "max_bars": 16,
+      "max_n_tokens": 1024,
+      "initial_context": 256,
+      "context_size": 256,
+      "prompt_name": "generated_sample",
+      "file": "0a0a52a35fa8a6384ef810e82d5ba53c.mid__representation",
+      "output_folder": "generated_samples"
+    }
+  },
+  "vae": {
+    "training_name": "default",
+    "load_from_checkpoint": false,
+    "out_dir": "",
+    "checkpoint_dir": "",
+    "checkpoint_name": "",
+    "datamodule_state": 1,
+    "device": "cuda",
+    "epochs": 100,
+    "max_training_steps": 100000,
+    "target_batch_size": 256,
+    "max_steps": 100000000000000000000,
+    "d_model": 512,
+    "n_codes": 2048,
+    "n_groups": 16,
+    "d_latent": 1024,
+    "lr": 1e-4,
+    "lr_schedule": "const",
+    "warmup_steps": 4000,
+    "encoder_layers": 4,
+    "decoder_layers": 6,
+    "encoder_ffn_dim": 2048,
+    "decoder_ffn_dim": 2048,
+    "windowed_attention_pr": 0.0,
+    "max_lookahead": 4,
+    "disable_vq": false,
+    "automatic_optimization": false,
+    "beta": 0.02,
+    "cycle_length": 2000,
+    "position_embedding_type": "relative_key_query",
+    "num_attention_heads": 8,
+    "decay": 0.995,
+    "eps": 1e-4,
+    "restart_threshold": 0.99
   }
 } 

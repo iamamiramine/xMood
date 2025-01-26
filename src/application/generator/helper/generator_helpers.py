@@ -1,7 +1,7 @@
 import torch
 from transformers.models.bert.modeling_bert import BertAttention
 
-from src.application.generator.models.generator_model import MIDIGeneratorModule
+from application.generator.models.generator_model import MIDIGeneratorModule
 
 
 def load_generator_from_checkpoint(checkpoint_dir: str, eval=True):

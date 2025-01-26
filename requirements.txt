@@ -33,3 +33,21 @@ pyntcloud
 # Processing
 numba
 aiofiles
+
+# Langchain
+langchain
+langchain-core
+langchain_chroma
+langgraph
+langchain-community
+langchain-huggingface
+
+pypdf
+rank_bm25
+
+transformers
+
+chromadb
+
+bitsandbytes
+accelerate

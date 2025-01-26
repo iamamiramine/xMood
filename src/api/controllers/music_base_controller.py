@@ -2,11 +2,11 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from src.domain.models.music_base.music_base_model import (
+from domain.models.music_base.music_base_model import (
     TonalPlanParameters,
     MusicBaseParameters,
 )
-from src.application.music_base.services import music_base_service
+from application.music_base.services import music_base_service
 
 router = APIRouter()
 

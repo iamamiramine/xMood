@@ -4,13 +4,13 @@ import torch
 
 import pandas as pd
 
-from src.domain.constants.encoder.token_constants import ANGER_KEY, LOVE_KEY, SADNESS_KEY, JOY_KEY, SURPRISE_KEY, BAR_KEY
-from src.application.emotion_mapper.models.emotion_mapper_model import EmotionMapper
-from src.domain.constants.paths_constants import LABELS_PATH, MIDI_PATH
+from domain.constants.encoder.token_constants import ANGER_KEY, LOVE_KEY, SADNESS_KEY, JOY_KEY, SURPRISE_KEY, BAR_KEY
+from application.emotion_mapper.models.emotion_mapper_model import EmotionMapper
+from domain.constants.paths_constants import LABELS_PATH, MIDI_PATH
 
 
 def load_emotion_mapper_from_checkpoint(checkpoint_dir: str, eval=True):
-    model, _ = EmotionMapper.load_checkpoint(checkpoint_dir, 1024, 512, eval)
+    model, _ = EmotionMapper.load_checkpoint(checkpoint_dir, 512, eval)
     return model
 
 
@@ -39,7 +39,7 @@ def read_labels(dataset_name, split: str = None):
 
 def read_label_for_midi(dataset_name, midi_file_path, split: str = None):
     # Construct the path to the CSV label file
-    path = os.path.join(LABELS_PATH, dataset_name, split, f"{split}_labels.csv") if split else os.path.join(LABELS_PATH, dataset_name, "labels.csv")
+    path = os.path.join(LABELS_PATH, split, f"{split}_labels.csv") if split else os.path.join(LABELS_PATH, "labels.csv")
     labels = pd.read_csv(str(path))
 
     # Drop "file" from columns to isolate label columns
@@ -47,6 +47,8 @@ def read_label_for_midi(dataset_name, midi_file_path, split: str = None):
 
     # Extract only the basename of the MIDI file to match the CSV file format
     midi_file_name = os.path.basename(midi_file_path)
+
+    labels["file"] = labels["file"].apply(os.path.basename)
 
     # Locate the row corresponding to the specific MIDI file
     row = labels.loc[labels["file"] == midi_file_name]

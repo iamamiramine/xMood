@@ -8,10 +8,10 @@ import torch
 from pretty_midi.utilities import program_to_instrument_name
 
 # Constants - Harmony
-from src.domain.constants.encoder.harmony_constants import get_all_major_minor_keys, get_pitch_classes, get_chord_qualities
+from domain.constants.encoder.harmony_constants import get_all_major_minor_keys, get_pitch_classes, get_chord_qualities
 
 # Constants - MIDI parameters
-from src.domain.constants.encoder.midi_constants import (
+from domain.constants.encoder.midi_constants import (
     DEFAULT_VELOCITY_BINS,
     DEFAULT_DURATION_BINS,
     DEFAULT_TEMPO_BINS,
@@ -25,7 +25,7 @@ from src.domain.constants.encoder.midi_constants import (
 )
 
 # Constants - Token types
-from src.domain.constants.encoder.token_constants import (
+from domain.constants.encoder.token_constants import (
     # Special tokens
     PAD_TOKEN,
     UNK_TOKEN,

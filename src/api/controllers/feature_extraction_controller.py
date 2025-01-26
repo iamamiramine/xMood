@@ -2,17 +2,9 @@ import asyncio
 
 from fastapi import APIRouter
 
-from src.domain.models.feature_extraction.feature_extraction_model import (
-    VQVAEParameters,
-    LatentRepresentationParameters,
-    TSNEParameters,
-    CorrelationParameters,
-    LatentRepresentationDatasetParameters,
-    SymbolicFeaturesParameters,
-    SymbolicFeaturesDatasetParameters,
-)
+from domain.models.feature_extraction.feature_extraction_model import SymbolicFeaturesParameters
 
-from src.application.feature_extraction.services import feature_extraction_service
+from application.feature_extraction.services import feature_extraction_service
 
 router = APIRouter()
 
@@ -38,7 +30,7 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters) -> dict:
 
 
 @router.post("/extract_symbolic_features_dataset")
-def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParameters) -> dict:
+def extract_symbolic_features_dataset(dataset_name: str) -> dict:
     """
     Description:
     ------------
@@ -46,7 +38,7 @@ def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParamet
 
     Parameters:
     -----------
-        parameters: DescriptionDatasetParameters
+        dataset_name: str
 
     Returns:
     --------
@@ -54,11 +46,11 @@ def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParamet
         A dictionary
 
     """
-    return asyncio.run(feature_extraction_service.extract_symbolic_features_dataset(parameters))
+    return asyncio.run(feature_extraction_service.extract_symbolic_features_dataset(dataset_name))
 
 
 @router.post("/train_vae")
-def train_vae(parameters: VQVAEParameters) -> dict:
+def train_vae(config_path: str) -> dict:
     """
     Description:
     ------------
@@ -66,7 +58,7 @@ def train_vae(parameters: VQVAEParameters) -> dict:
 
     Parameters:
     -----------
-        parameters: VQVAEParameters
+        config_path: str
 
     Returns:
     --------
@@ -74,11 +66,11 @@ def train_vae(parameters: VQVAEParameters) -> dict:
         A dictionary
 
     """
-    return feature_extraction_service.train_vae(parameters)
+    return feature_extraction_service.train_vae(config_path)
 
 
 @router.post("/generate_latent_representations_dataset")
-def generate_latent_representations_dataset(parameters: LatentRepresentationDatasetParameters) -> dict:
+def generate_latent_representations_dataset(config_path: str) -> dict:
     """
     Description:
     ------------
@@ -86,7 +78,7 @@ def generate_latent_representations_dataset(parameters: LatentRepresentationData
 
     Parameters:
     -----------
-        parameters: VQVAEParameters
+        config_path: str
 
     Returns:
     --------
@@ -94,4 +86,4 @@ def generate_latent_representations_dataset(parameters: LatentRepresentationData
         A dictionary
 
     """
-    return feature_extraction_service.generate_latent_representations_dataset(parameters)
+    return feature_extraction_service.generate_latent_representations_dataset(config_path)

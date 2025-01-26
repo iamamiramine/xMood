@@ -2,7 +2,7 @@ import torch
 
 from transformers.models.bert.modeling_bert import BertAttention
 
-from src.application.feature_extraction.models.vae_model import VqVaeModule
+from application.feature_extraction.models.vae_model import VqVaeModule
 
 
 def load_vae_from_checkpoint(checkpoint_dir: str):

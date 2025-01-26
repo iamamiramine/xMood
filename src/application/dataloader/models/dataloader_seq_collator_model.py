@@ -11,27 +11,32 @@ class SeqCollator:
     def __call__(self, features):
         batch = {}
 
-        xs = [feature["input_ids"] for feature in features]
-        xs = pad_sequence(xs, batch_first=True, padding_value=self.pad_token)
+        # Handle input_ids if present
+        if "input_ids" in features[0]:
+            xs = [feature["input_ids"] for feature in features]
+            xs = pad_sequence(xs, batch_first=True, padding_value=self.pad_token)
 
-        if self.context_size > 0:
-            max_len = self.context_size
-            max_desc_len = self.context_size
+            if self.context_size > 0:
+                max_len = self.context_size
+                max_symb_len = self.context_size
+            else:
+                max_len = xs.size(1)
+                max_symb_len = int(1e4)
+
+            tmp = xs[:, : (max_len + 1)][:, :-1]
+            labels = xs[:, : (max_len + 1)][:, 1:].clone().detach()
+            xs = tmp
+
+            seq_len = xs.size(1)
+
+            batch["input_ids"] = xs
+            batch["labels"] = labels
+
+            # Get batch size from input_ids
+            batch_size = batch["input_ids"].shape[0]
         else:
-            max_len = xs.size(1)
-            max_desc_len = int(1e4)
-
-        tmp = xs[:, : (max_len + 1)][:, :-1]
-        labels = xs[:, : (max_len + 1)][:, 1:].clone().detach()
-        xs = tmp
-
-        seq_len = xs.size(1)
-
-        batch["input_ids"] = xs
-        batch["labels"] = labels
-
-        # Get batch size from input_ids
-        batch_size = batch["input_ids"].shape[0]
+            # For captioning mode, get batch size from number of features
+            batch_size = len(features)
 
         if "position_ids" in features[0]:
             position_ids = [feature["position_ids"] for feature in features]
@@ -46,40 +51,67 @@ class SeqCollator:
         if "latents" in features[0]:
             latents = [feature["latents"] for feature in features]
             latents = pad_sequence(latents, batch_first=True, padding_value=0.0)
-            batch["latents"] = latents[:, :max_desc_len]
+            batch["latents"] = latents[:, :max_symb_len]
 
         if "codes" in features[0]:
             codes = [feature["codes"] for feature in features]
             codes = pad_sequence(codes, batch_first=True, padding_value=0)
-            batch["codes"] = codes[:, :max_desc_len]
+            batch["codes"] = codes[:, :max_symb_len]
 
-        if "description" in features[0]:
-            description = [feature["description"] for feature in features]
-            description = pad_sequence(description, batch_first=True, padding_value=self.pad_token)
-            desc = description[:, :max_desc_len]
-            batch["description"] = desc
+        if "symbolic_ids" in features[0]:
+            symbolic_ids = [feature["symbolic_ids"] for feature in features]
+            symbolic_ids = pad_sequence(symbolic_ids, batch_first=True, padding_value=self.pad_token)
+            symb_ids = symbolic_ids[:, :max_symb_len]
+            batch["symbolic_ids"] = symb_ids
 
-            if "desc_bar_ids" in features[0]:
-                desc_len = desc.size(1)
-                desc_bar_ids = [feature["desc_bar_ids"] for feature in features]
-                desc_bar_ids = pad_sequence(desc_bar_ids, batch_first=True, padding_value=0)
-                batch["desc_bar_ids"] = desc_bar_ids[:, :desc_len]
+            if "symb_bar_ids" in features[0]:
+                symb_len = symb_ids.size(1)
+                symb_bar_ids = [feature["symb_bar_ids"] for feature in features]
+                symb_bar_ids = pad_sequence(symb_bar_ids, batch_first=True, padding_value=0)
+                batch["symb_bar_ids"] = symb_bar_ids[:, :symb_len]
 
-        if "encoded_emotions" in features[0]:
-            encoded_emotions = [feature["encoded_emotions"] for feature in features]
-            encoded_emotions = torch.tensor(encoded_emotions, dtype=torch.long)
-            encoded_emotions = pad_sequence(encoded_emotions, batch_first=True, padding_value=0)
-            batch["encoded_emotions"] = encoded_emotions
-
-        if "emotion_tokens" in features[0]:
-            emotion_tokens = [feature["emotion_tokens"] for feature in features]
-            batch["emotion_tokens"] = emotion_tokens
+        if "symbolic" in features[0]:
+            symbolic = [feature["symbolic"] for feature in features]
+            batch["symbolic"] = symbolic
 
         if "emotions_vector" in features[0]:
             emotions_vector = [feature["emotions_vector"] for feature in features]
             emotions_vector = torch.tensor(emotions_vector, dtype=torch.float32, device=self.device)
             emotions_vector = emotions_vector.expand(batch_size, -1)
             batch["emotions_vector"] = emotions_vector
+
+        if "genre" in features[0]:
+            batch["genre"] = [feature.get("genre", "") for feature in features]
+
+        if "composer" in features[0]:
+            batch["composer"] = [feature.get("composer", "") for feature in features]
+
+        if "note_density" in features[0]:
+            batch["note_density"] = [feature.get("note_density", "") for feature in features]
+
+        if "mean_velocity" in features[0]:
+            batch["mean_velocity"] = [feature.get("mean_velocity", "") for feature in features]
+
+        if "mean_pitch" in features[0]:
+            batch["mean_pitch"] = [feature.get("mean_pitch", "") for feature in features]
+
+        if "mean_duration" in features[0]:
+            batch["mean_duration"] = [feature.get("mean_duration", "") for feature in features]
+
+        if "time_signature" in features[0]:
+            batch["time_signature"] = [feature.get("time_signature", "") for feature in features]
+
+        if "key_signature" in features[0]:
+            batch["key_signature"] = [feature.get("key_signature", "") for feature in features]
+
+        if "chords" in features[0]:
+            batch["chords"] = [feature.get("chords", "") for feature in features]
+
+        if "instruments" in features[0]:
+            batch["instruments"] = [feature.get("instruments", "") for feature in features]
+
+        if "emotions" in features[0]:
+            batch["emotions"] = [feature.get("emotions", "") for feature in features]
 
         if "file" in features[0]:
             batch["files"] = [feature["file"] for feature in features]

@@ -12,6 +12,7 @@ services:
       MKL_SERVICE_FORCE_INTEL: "1"
       TORCH_USE_CUDA_DSA: "1"
       CUDA_LAUNCH_BLOCKING: "1"
+      TRANSFORMERS_CACHE: "/app/shared/huggingface"
     ports:
       - "8000:80"
     volumes:

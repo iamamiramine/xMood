@@ -12,16 +12,17 @@ from transformers import BertConfig, EncoderDecoderConfig, EncoderDecoderModel
 
 from lightning.pytorch import LightningModule
 
-from src.application.encoder.helpers.vocab_helper import get_bars, mask_bar_tokens, get_bos_eos_events
-from src.domain.constants.paths_constants import LATENTS_PATH
-from src.domain.constants.encoder.token_constants import (
+from persistence.dataloader.repositories.dataloader_repository import save_async, async_load
+from application.encoder.helpers.vocab_helper import get_bars, mask_bar_tokens, get_bos_eos_events
+from domain.constants.paths_constants import LATENTS_PATH, PROCESSED_PATH
+from domain.constants.encoder.token_constants import (
     PAD_TOKEN,
     MASK_TOKEN,
     BOS_TOKEN,
     EOS_TOKEN,
 )
-from src.application.feature_extraction.models.vq_ema_model import VectorQuantizeEMA
-from src.application.encoder.models.vocab_model import RemiVocab
+from application.feature_extraction.models.vq_ema_model import VectorQuantizeEMA
+from application.encoder.models.vocab_model import RemiVocab
 
 
 class VqVaeModule(LightningModule):
@@ -365,25 +366,22 @@ class VqVaeModule(LightningModule):
         pred = {}
         events = batch["input_ids"]
 
-        output_path = Path(
-            os.path.join(
-                str(LATENTS_PATH),
-                self.dataset_name,
-            )
-        )
+        output_path = os.path.join(PROCESSED_PATH, self.dataset_name)
 
         for i, event_ids in enumerate(events):
             file = batch["files"][i]
-            if os.path.isfile(os.path.join(output_path, f"{os.path.basename(file)}_latents.pkl")):
-                continue
-            else:
+            try:
+                # Load existing processed data
+                processed_data = async_load(output_path, file, "processed")
+
+                # Skip if latents already exist
+                if "latents" in processed_data:
+                    continue
+
                 events_dec = self.vocab.decode(event_ids)
 
                 bars = get_bars(events_dec)
                 mask_bar_tokens(events_dec, bar_token_mask=None)
-
-                # event_ids = torch.tensor(self.vocab.encode(events_dec), dtype=torch.long).to(self.device)
-                # print(events[i] == event_ids)
 
                 groups = [event_ids[start:end] for start, end in zip(bars[:-1], bars[1:])]
                 groups.append(event_ids[bars[-1] :])
@@ -405,14 +403,16 @@ class VqVaeModule(LightningModule):
                 latents = torch.cat(latents)
                 codes = torch.cat(codes)
 
-                if not os.path.exists(output_path):
-                    os.makedirs(output_path)
-
-                out = {
-                    "latents": latents,
-                    "codes": codes,
+                # Update processed data with latents
+                processed_data["latents"] = {
+                    "latents": latents.cpu().numpy()[0],
+                    "codes": codes.cpu().numpy()[0],
                 }
 
-                pickle.dump(out, open(os.path.join(output_path, f"{os.path.basename(file)}_latents.pkl"), "wb"))
+                # Save back to processed file
+                save_async(output_path, file, processed_data, "processed")
+
+            except Exception as e:
+                print(f"Error processing {os.path.basename(file)}: {str(e)}")
 
         return pred

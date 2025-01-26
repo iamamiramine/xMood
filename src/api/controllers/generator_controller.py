@@ -1,13 +1,12 @@
 from fastapi import APIRouter
 
-from src.domain.models.generator.generator_model import GeneratorTrainingParameters, GeneratorGenerateParameters, GeneratorGeneratePromptParameters
-from src.application.generator.services import generator_service
+from application.generator.services import generator_service
 
 router = APIRouter()
 
 
 @router.post("/train_generator")
-def train_generator(parameters: GeneratorTrainingParameters) -> dict:
+def train_generator(config_path: str) -> dict:
     """
     Description:
     ------------
@@ -15,7 +14,7 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
 
     Parameters:
     -----------
-        parameters: GeneratorTrainingParameters
+        config_path: str
 
     Returns:
     --------
@@ -23,11 +22,11 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
         A dictionary
 
     """
-    return generator_service.train_generator(parameters)
+    return generator_service.train_generator(config_path)
 
 
 @router.post("/generate_sample_from_prompt")
-def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters) -> dict:
+def generate_sample_from_prompt(config_path: str) -> dict:
     """
     Description:
     ------------
@@ -35,7 +34,7 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters) -
 
     Parameters:
     -----------
-        parameters: GeneratorGeneratePromptParameters
+        config_path: str
 
     Returns:
     --------
@@ -43,4 +42,4 @@ def generate_sample_from_prompt(parameters: GeneratorGeneratePromptParameters) -
         A dictionary
 
     """
-    return generator_service.generate_sample_from_prompt(parameters)
+    return generator_service.generate_sample_from_prompt(config_path)
