@@ -98,11 +98,11 @@ class SeqCollator:
         if "mean_duration" in features[0]:
             batch["mean_duration"] = [feature.get("mean_duration", "") for feature in features]
 
-        if "time_signature" in features[0]:
-            batch["time_signature"] = [feature.get("time_signature", "") for feature in features]
+        if "time_signatures" in features[0]:
+            batch["time_signatures"] = [feature.get("time_signatures", "") for feature in features]
 
-        if "key_signature" in features[0]:
-            batch["key_signature"] = [feature.get("key_signature", "") for feature in features]
+        if "key_signatures" in features[0]:
+            batch["key_signatures"] = [feature.get("key_signatures", "") for feature in features]
 
         if "chords" in features[0]:
             batch["chords"] = [feature.get("chords", "") for feature in features]

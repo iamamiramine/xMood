@@ -244,23 +244,23 @@ class DataloaderDataset(IterableDataset):
 
                     # Get symbolic features
                     if "symbolic_features" in processed_data:
-                        x["note_density"] = processed_data["symbolic_features"]["note_density"]
-                        x["mean_velocity"] = processed_data["symbolic_features"]["mean_velocity"]
-                        x["mean_pitch"] = processed_data["symbolic_features"]["mean_pitch"]
-                        x["mean_duration"] = processed_data["symbolic_features"]["mean_duration"]
-                        x["time_signature"] = processed_data["symbolic_features"]["time_signature"]
-                        x["key_signature"] = processed_data["symbolic_features"]["key_signature"]
-                        x["chords"] = processed_data["symbolic_features"]["chords"]
-                        x["instruments"] = processed_data["symbolic_features"]["instruments"]
+                        x["note_density"] = processed_data["symbolic_features"]["piece_level"]["note_density"]
+                        x["mean_velocity"] = processed_data["symbolic_features"]["piece_level"]["mean_velocity"]
+                        x["mean_pitch"] = processed_data["symbolic_features"]["piece_level"]["mean_pitch"]
+                        x["mean_duration"] = processed_data["symbolic_features"]["piece_level"]["mean_duration"]
+                        x["time_signatures"] = processed_data["symbolic_features"]["piece_level"]["time_signatures"]
+                        x["key_signatures"] = processed_data["symbolic_features"]["piece_level"]["key_signatures"]
+                        x["chords"] = processed_data["symbolic_features"]["piece_level"]["chords"]
+                        x["instruments"] = processed_data["symbolic_features"]["piece_level"]["instruments"]
 
-                    # Get metadata and emotions
-                    midi_labels_df, label_columns = read_label_for_midi(self.dataset_name, x["file"])
-                    if midi_labels_df is not None:
-                        x["emotions"] = midi_labels_df[label_columns].values.flatten().tolist()  # TODO: Convert to tokens
-                        if "genre" in midi_labels_df.columns:
-                            x["genre"] = midi_labels_df["genre"].values[0]
-                        if "composer" in midi_labels_df.columns:
-                            x["composer"] = midi_labels_df["composer"].values[0]
+                    # # Get metadata and emotions
+                    # midi_labels_df, label_columns = read_label_for_midi(self.dataset_name, x["file"])
+                    # if midi_labels_df is not None:
+                    #     x["emotions"] = midi_labels_df[label_columns].values.flatten().tolist()  # TODO: Convert to tokens
+                    #     if "genre" in midi_labels_df.columns:
+                    #         x["genre"] = midi_labels_df["genre"].values[0]
+                    #     if "composer" in midi_labels_df.columns:
+                    #         x["composer"] = midi_labels_df["composer"].values[0]
 
                     yield x
                     continue
