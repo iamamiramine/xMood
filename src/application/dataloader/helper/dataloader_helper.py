@@ -1,6 +1,5 @@
 import torch
 
-from application.emotion_mapper.helpers.emotion_mapper_helper import read_label_for_midi
 from persistence.dataloader.repositories.dataloader_repository import (
     save_async,
 )
@@ -10,7 +9,7 @@ from application.encoder.helpers.vocab_helper import (
     mask_bar_tokens,
     get_bos_eos_events,
 )
-from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
+from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab, EmotionVocab
 from domain.constants.encoder.token_constants import (
     BAR_KEY,
     BOS_TOKEN,
@@ -30,14 +29,20 @@ def represent_encoding(
     events,
     latents=None,
     codes=None,
-    symbolic=None,
+    bar_symbolic=None,
+    piece_symbolic=None,
+    piece_emotions_vector=None,
+    piece_emotions_tokens=None,
     save=False,
     out_dir="",
     api_call=False,
     processed_data=None,
 ):
     vocab = RemiVocab()
+    symb_vocab = SymbolicFeaturesVocab()
+    emotion_vocab = EmotionVocab()
     bars, bar_ids = get_bars(events, include_ids=True)
+
     if len(bars) > max_bars:
         print(f"WARNING: REMI sequence has more than {max_bars} bars: {len(bars)} event bars.")
 
@@ -94,10 +99,14 @@ def represent_encoding(
             "position_ids": p_ids,
         }
 
-        if symbolic is not None:
-            symb_vocab = SymbolicFeaturesVocab()
+        if piece_symbolic is not None:
+            piece_symbolic_ids = torch.tensor(symb_vocab.encode(piece_symbolic), dtype=torch.int)
+            x["piece_symbolic"] = piece_symbolic
+            x["piece_symbolic_ids"] = piece_symbolic_ids
+
+        if bar_symbolic is not None:
             min_bar = b_ids[0]
-            symb_events = symbolic
+            symb_events = bar_symbolic
             symb_bars = [i for i, event in enumerate(symb_events) if f"{BAR_KEY}_" in event]
             start_idx = symb_bars[max(0, min_bar - 1)]
 
@@ -105,10 +114,14 @@ def represent_encoding(
             symb_bar_ids[symb_bars] = 1
             symb_bar_ids = torch.cumsum(symb_bar_ids, dim=0)
 
+            symb_position_ids = get_positions(symb_events)
+            symb_position_ids = torch.cat([zero, symb_position_ids, zero])
+
             if max_bars_per_context and max_bars_per_context > 0:
                 end_idx = symb_bars[min_bar + max_bars_per_context]
                 symb_events = symb_events[start_idx:end_idx]
                 symb_bar_ids = symb_bar_ids[start_idx:end_idx]
+                symb_position_ids = symb_position_ids[start_idx:end_idx]
                 start_idx = 0
 
             symb_bos = torch.tensor(symb_vocab.encode([BOS_TOKEN]), dtype=torch.int)
@@ -124,21 +137,27 @@ def represent_encoding(
 
             if context_size > 0:
                 start, end = start_idx, start_idx + context_size + 1
-                x["symbolic_ids"] = symb_ids[start:end]
+                x["bar_symbolic_ids"] = symb_ids[start:end]
                 x["symb_bar_ids"] = symb_bar_ids[start:end]
-                x["symbolic"] = symbolic[start:end]
+                x["bar_symbolic"] = bar_symbolic[start:end]
+                x["symb_position_ids"] = symb_position_ids[start:end]
             else:
-                x["symbolic_ids"] = symb_ids[start:]
+                x["bar_symbolic_ids"] = symb_ids[start:]
                 x["symb_bar_ids"] = symb_bar_ids[start:]
-                x["symbolic"] = symbolic[start:]
+                x["bar_symbolic"] = bar_symbolic[start:]
+                x["symb_position_ids"] = symb_position_ids[start:]
+
+        if piece_emotions_vector is not None:
+            x["emotions_vector"] = piece_emotions_vector
+
+        if piece_emotions_tokens is not None:
+            piece_emotions_ids = torch.tensor(emotion_vocab.encode(piece_emotions_tokens), dtype=torch.int)
+            x["piece_emotions_tokens"] = piece_emotions_tokens
+            x["piece_emotions_ids"] = piece_emotions_ids
 
         if latents is not None:
             x["latents"] = latents
             x["codes"] = codes
-
-        midi_labels_df, label_columns = read_label_for_midi(dataset_name, midi)
-        emotions_vector = midi_labels_df[label_columns].values.flatten().tolist()
-        x["emotions_vector"] = emotions_vector
 
         if save:
             if processed_data is not None:

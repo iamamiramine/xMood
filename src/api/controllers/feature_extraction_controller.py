@@ -30,7 +30,7 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters) -> dict:
 
 
 @router.post("/extract_symbolic_features_dataset")
-def extract_symbolic_features_dataset(dataset_name: str) -> dict:
+def extract_symbolic_features_dataset(dataset_name: str, level: str = "bar") -> dict:
     """
     Description:
     ------------
@@ -46,7 +46,7 @@ def extract_symbolic_features_dataset(dataset_name: str) -> dict:
         A dictionary
 
     """
-    return asyncio.run(feature_extraction_service.extract_symbolic_features_dataset(dataset_name))
+    return asyncio.run(feature_extraction_service.extract_symbolic_features_dataset(dataset_name, level))
 
 
 @router.post("/train_vae")

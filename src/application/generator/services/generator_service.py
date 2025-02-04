@@ -20,7 +20,6 @@ from application.generator.helper.generator_helpers import (
 
 from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
-    GENERATOR_PATH,
     GENERATED_PATH,
     REPRESENTATIONS_PATH,
 )
@@ -37,8 +36,6 @@ def train_generator(config_path: str) -> dict:
     generator_config = config.get("generator", {})
     datamodule_parameters = config["dataloader"]
 
-    datamodule_parameters["load_latent"] = datamodule_parameters.get("load_latent", True)
-    datamodule_parameters["load_symb"] = datamodule_parameters.get("load_symb", True)
     datamodule_parameters["batch_size"] = 4
     datamodule_parameters["context_size"] = 512
 
@@ -75,11 +72,6 @@ def train_generator(config_path: str) -> dict:
             intermediate_size=generator_config.get("intermediate_size", 2048),
             num_attention_heads=generator_config.get("num_attention_heads", 8),
             use_pretrained_latent_embeddings=generator_config.get("use_pretrained_latent_embeddings", True),
-            load_symb=datamodule_parameters.get("load_symb", True),
-            load_latent=datamodule_parameters.get("load_latent", True),
-            load_sentiments=datamodule_parameters.get("load_sentiments", True),
-            load_bert_from_ckpt=generator_config.get("load_bert_from_ckpt", False),
-            save_encoder_decoder_path=os.path.join(GENERATOR_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name"), "BERT"),
         )
 
     device = torch.device(generator_config.get("device", "cuda"))
@@ -99,7 +91,7 @@ def train_generator(config_path: str) -> dict:
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     trainer = Trainer(
-        default_root_dir=os.path.join(GENERATOR_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name")),
+        default_root_dir=os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name"), "training_logs"),
         devices=device_count,
         accelerator="gpu",
         profiler="simple",

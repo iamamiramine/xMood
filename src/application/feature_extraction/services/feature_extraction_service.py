@@ -22,6 +22,7 @@ from application.encoder.helpers.encoder_helper import (
 )
 from application.feature_extraction.helpers.symbolic_features_helper import (
     get_symbolic_features,
+    get_piece_level_symbolic_features,
 )
 from application.dataloader.models.dataloader_model import DataloaderModule
 from application.feature_extraction.helpers.latent_features_helper import (
@@ -67,17 +68,27 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
     items = remi_keys + remi_chords + tempo_items + note_items
     groups = group_items(midi, downbeats, items=items)
     groups = extract_dominant_keys(groups)
-    symbolic_features = get_symbolic_features(midi, groups)
 
-    # Update processed data with symbolic features
-    processed_data["symbolic_features"] = {"symbolic": symbolic_features}
+    if "symbolic_features" not in processed_data:
+        processed_data["symbolic_features"] = {}
+
+    # Extract features based on level (bar or piece)
+    if parameters.level == "piece":
+        symbolic_features = get_piece_level_symbolic_features(
+            midi,
+            groups,
+        )
+        processed_data["symbolic_features"]["piece_symbolic"] = symbolic_features
+    elif parameters.level == "bar":
+        symbolic_features = get_symbolic_features(midi, groups, add_position_tokens=True)  # TODO: add_position_tokens in parameters
+        processed_data["symbolic_features"]["bar_symbolic"] = symbolic_features
 
     if parameters.save:
         # Save back to the same processed file
         save_async(processed_dir, parameters.midi, processed_data, "processed")
 
 
-async def extract_symbolic_features_dataset(dataset_name: str) -> dict:
+async def extract_symbolic_features_dataset(dataset_name: str, level: str = "bar") -> dict:
     dataset_path = MIDI_PATH
     processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
 
@@ -87,6 +98,7 @@ async def extract_symbolic_features_dataset(dataset_name: str) -> dict:
                 midi=file_path,
                 processed_dir=processed_dir,
                 save=True,
+                level=level,
             )
         )
         return True, ""
@@ -106,7 +118,7 @@ async def extract_symbolic_features_dataset(dataset_name: str) -> dict:
         results = await asyncio.gather(*batch_tasks, return_exceptions=False)
         processed += len(batch)
 
-    return {"Message": "Extracted Description Dataset"}
+    return {"Message": f"Extracted {level}-level features for {dataset_name} dataset"}
 
 
 def train_vae(config_path: str) -> dict:

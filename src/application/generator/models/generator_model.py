@@ -1,6 +1,3 @@
-import os
-import logging
-
 import lightning.pytorch as pl
 import torch.optim
 import torch.nn as nn
@@ -66,13 +63,7 @@ class MIDIGeneratorModule(pl.LightningModule):
         intermediate_size=2048,
         num_attention_heads=8,
         use_pretrained_latent_embeddings=True,
-        load_latent=True,
-        load_symb=False,
-        load_sentiments=True,
-        sentiment_dim=5,
         device="cuda:0",
-        load_bert_from_ckpt=False,
-        save_encoder_decoder_path=None,
     ):
         super(MIDIGeneratorModule, self).__init__()
 
@@ -87,16 +78,10 @@ class MIDIGeneratorModule(pl.LightningModule):
         self.warmup_steps = warmup_steps
         self.max_steps = max_steps
 
-        self.load_latent = load_latent
-        self.load_symb = load_symb
-        self.load_sentiments = load_sentiments
-
         self._device = torch.device(device)
 
         self.vocab = RemiVocab()
-
-        self.load_bert_from_ckpt = load_bert_from_ckpt
-        self.save_encoder_decoder_path = save_encoder_decoder_path
+        self.symb_vocab = SymbolicFeaturesVocab()
 
         encoder_config = BertConfig(
             vocab_size=1,
@@ -120,10 +105,7 @@ class MIDIGeneratorModule(pl.LightningModule):
         )
         config = EncoderDecoderConfig.from_encoder_decoder_configs(encoder_config, decoder_config)
 
-        if self.load_bert_from_ckpt:
-            self.load_bert_checkpoints(self.save_encoder_decoder_path)
-        else:
-            self.transformer = EncoderDecoderModel(config)
+        self.transformer = EncoderDecoderModel(config)
 
         self.transformer.config.decoder.is_decoder = True
         self.transformer.config.decoder.add_cross_attention = True
@@ -131,23 +113,14 @@ class MIDIGeneratorModule(pl.LightningModule):
         self.bar_embedding = nn.Embedding(self.max_bars + 1, self.d_model)
         self.pos_embedding = nn.Embedding(self.max_positions + 1, self.d_model)
 
-        if self.load_latent:
-            if use_pretrained_latent_embeddings:
-                self.latent_in = nn.Linear(self.d_latent, self.d_model, bias=False)
-            else:
-                self.latent_in = GroupEmbedding(n_codes, n_groups, self.d_model, inner_dim=self.d_latent // n_groups)
-        if self.load_symb:
-            sym_vocab = SymbolicFeaturesVocab()
-            self.sym_in = nn.Embedding(len(sym_vocab), self.d_model)
+        if use_pretrained_latent_embeddings:
+            self.latent_in = nn.Linear(self.d_latent, self.d_model, bias=False)
+        else:
+            self.latent_in = GroupEmbedding(n_codes, n_groups, self.d_model, inner_dim=self.d_latent // n_groups)
 
-        # Add sentiment embedding layer
-        if self.load_sentiments:
-            self.sentiment_embedding = nn.Linear(sentiment_dim, self.d_model, bias=False)
+        self.symb_in = nn.Embedding(len(self.symb_vocab), self.d_model)
 
-        if self.load_latent and self.load_symb and self.load_sentiments:
-            self.sym_proj = nn.Linear(3 * self.d_model, self.d_model, bias=False)  # TODO: Check 3*self.d_model instead of 2*self.d_model
-        elif (self.load_latent and self.load_symb) or (self.load_latent and self.load_sentiments) or (self.load_symb and self.load_sentiments):
-            self.sym_proj = nn.Linear(2 * self.d_model, self.d_model, bias=False)
+        self.symb_proj = nn.Linear(2 * self.d_model, self.d_model, bias=False)
 
         self.in_layer = nn.Embedding(len(self.vocab), self.d_model)
         self.out_layer = nn.Linear(self.d_model, len(self.vocab), bias=False)
@@ -156,35 +129,16 @@ class MIDIGeneratorModule(pl.LightningModule):
 
         self.save_hyperparameters()
 
-    def save_bert_checkpoints(self, save_encoder_decoder_path=None):
-        """Save encoder and decoder BERT models separately"""
-        if save_encoder_decoder_path:
-            self.transformer.save_pretrained(self.save_encoder_decoder_path)
-            logging.info(f"Saved encoder checkpoint to {save_encoder_decoder_path}")
+    def encode(self, z=None, symb_bar_ids=None):
+        latent_emb, symb_emb = None, None
+        if "bar_symbolic_ids" in z:
+            symb_emb = get_embedding(z.get("bar_symbolic_ids"), self.symb_in, self._device)
 
-    def load_bert_checkpoints(self, save_encoder_decoder_path=None):
-        """Load encoder and decoder BERT models separately"""
-        if save_encoder_decoder_path and os.path.exists(save_encoder_decoder_path):
-            self.transformer = EncoderDecoderModel.from_pretrained(save_encoder_decoder_path)
-            logging.info(f"Loaded EncoderDecoderModel checkpoint from {save_encoder_decoder_path}")
-
-    def on_save_checkpoint(self, checkpoint):
-        """Optional: Save BERT checkpoints when Lightning saves a checkpoint"""
-        if self.save_encoder_decoder_path:
-            self.save_bert_checkpoints(self.save_encoder_decoder_path)
-
-    def encode(self, z=None, sym_bar_ids=None):
-        sym_emb, latent_emb, sentiment_emb = None, None, None
-        if z is not None:
-            if self.load_symb:
-                sym_emb = get_embedding(z.get("symbolic"), self.sym_in, self._device)
-            if self.load_latent:
-                latent_emb = get_embedding(z.get("latents"), self.latent_in, self._device)
-            if self.load_sentiments:
-                sentiment_emb = get_embedding(z.get("sentiments_vector"), self.sentiment_embedding, self._device)
+        if "latents" in z:
+            latent_emb = get_embedding(z.get("latents"), self.latent_in, self._device)
 
         # Collect non-None embeddings
-        embeddings = [emb for emb in [sym_emb, latent_emb, sentiment_emb] if emb is not None]
+        embeddings = [emb for emb in [symb_emb, latent_emb] if emb is not None]
 
         # Handle case when z is None
         if not embeddings:
@@ -193,36 +147,27 @@ class MIDIGeneratorModule(pl.LightningModule):
         # Pad and transpose embeddings
         padded_embeddings = pad_and_transpose(embeddings)
 
-        if len(padded_embeddings) == 3:
-            sym_emb, latent_emb, sentiment_emb = padded_embeddings
-        elif len(padded_embeddings) == 2:
-            if sym_emb is not None and latent_emb is not None:
-                sym_emb, latent_emb = padded_embeddings
-            elif sym_emb is not None and sentiment_emb is not None:
-                sym_emb, sentiment_emb = padded_embeddings
-            elif latent_emb is not None and sentiment_emb is not None:
-                latent_emb, sentiment_emb = padded_embeddings
+        if len(padded_embeddings) == 2:
+            symb_emb, latent_emb = padded_embeddings
         elif len(padded_embeddings) == 1:
-            if sym_emb is not None:
-                sym_emb = padded_embeddings[0]
+            if symb_emb is not None:
+                symb_emb = padded_embeddings[0]
             elif latent_emb is not None:
                 latent_emb = padded_embeddings[0]
-            elif sentiment_emb is not None:
-                sentiment_emb = padded_embeddings[0]
 
         # Collect non-None embeddings
-        z_embeddings = [emb for emb in [sym_emb, latent_emb, sentiment_emb] if emb is not None]
+        z_embeddings = [emb for emb in [symb_emb, latent_emb] if emb is not None]
 
         # Determine the output
         if len(z_embeddings) == 1:
             z_emb = embeddings[0]  # Return the single embedding as is
-            if sym_bar_ids is not None and sym_emb is not None:
-                z_emb += self.bar_embedding(sym_bar_ids.to(self._device))
+            if symb_bar_ids is not None and symb_emb is not None:
+                z_emb += self.bar_embedding(symb_bar_ids.to(self._device))
         elif len(z_embeddings) > 1:
-            if sym_bar_ids is not None and sym_emb is not None:
-                sym_emb = sym_emb + self.bar_embedding(sym_bar_ids.to(self._device))
-                z_embeddings = [emb for emb in [sym_emb, latent_emb, sentiment_emb] if emb is not None]
-            z_emb = self.sym_proj(concatenate_embeddings(*z_embeddings))  # Project concatenated embeddings
+            if symb_bar_ids is not None and symb_emb is not None:
+                symb_emb = symb_emb + self.bar_embedding(symb_bar_ids.to(self._device))
+                z_embeddings = [emb for emb in [symb_emb, latent_emb] if emb is not None]
+            z_emb = self.symb_proj(concatenate_embeddings(*z_embeddings))  # Project concatenated embeddings
 
         out = self.transformer.encoder(inputs_embeds=z_emb, output_hidden_states=True)
         encoder_hidden = out.hidden_states[-1]
@@ -258,7 +203,7 @@ class MIDIGeneratorModule(pl.LightningModule):
             return self.out_layer(hidden)
 
     def forward(self, x, z=None, labels=None, position_ids=None, bar_ids=None, symbolic_bar_ids=None, return_hidden=False):
-        encoder_hidden = self.encode(z, sym_bar_ids=symbolic_bar_ids)
+        encoder_hidden = self.encode(z, symb_bar_ids=symbolic_bar_ids)
 
         out = self.decode(
             x,
@@ -271,34 +216,39 @@ class MIDIGeneratorModule(pl.LightningModule):
 
         return out
 
+    def _build_z_input(self, batch):
+        """
+        Builds the z input dictionary from batch data.
+        Returns a tuple of (z, symb_bar_ids) where:
+        - z: dictionary containing latents, symbolic
+        - symb_bar_ids: symbolic bar ids if symbolic data is present, else None
+        """
+        if batch is None:
+            return None, None
+
+        available_inputs = {
+            "latents": batch.get("latents"),
+            "bar_symbolic": batch.get("bar_symbolic_ids"),
+        }
+
+        # Filter out None values
+        z = {k: v for k, v in available_inputs.items() if v is not None}
+
+        # If no inputs are available, return None
+        if not z:
+            return None, None
+
+        symb_bar_ids = batch.get("symb_bar_ids") if "symbolic" in z else None
+        return z, symb_bar_ids
+
     def get_loss(self, batch, return_logits=False):
         x = batch["input_ids"]  # Shape of x: (batch_size, seq_len, tuple_size)
         bar_ids = batch["bar_ids"]
         position_ids = batch["position_ids"]
         labels = batch["labels"]  # Shape of labels: (batch_size, tgt_len, tuple_size)
 
-        # Check for latents, symbolic, and sentiments
-        z, sym_bar_ids = None, None
-        if batch.get("latents") is not None and batch.get("symbolic") is None and batch.get("sentiments_vector") is None:
-            z = {"latents": batch["latents"]}
-        elif batch.get("symbolic") is not None and batch.get("latents") is None and batch.get("sentiments_vector") is None:
-            z = {"symbolic": batch["symbolic"]}
-            sym_bar_ids = batch["sym_bar_ids"]
-        elif batch.get("latents") is not None and batch.get("symbolic") is not None and batch.get("sentiments_vector") is None:
-            z = {"latents": batch["latents"], "symbolic": batch["symbolic"]}
-            sym_bar_ids = batch["sym_bar_ids"]
-        elif batch.get("sentiments_vector") is not None and batch.get("latents") is None and batch.get("symbolic") is None:
-            z = {"sentiments_vector": batch["sentiments_vector"]}
-        elif batch.get("latents") is not None and batch.get("sentiments_vector") is not None and batch.get("symbolic") is None:
-            z = {"latents": batch["latents"], "sentiments_vector": batch["sentiments_vector"]}
-        elif batch.get("symbolic") is not None and batch.get("sentiments_vector") is not None and batch.get("latents") is None:
-            z = {"symbolic": batch["symbolic"], "sentiments_vector": batch["sentiments_vector"]}
-            sym_bar_ids = batch["sym_bar_ids"]
-        elif batch.get("latents") is not None and batch.get("symbolic") is not None and batch.get("sentiments_vector") is not None:
-            z = {"latents": batch["latents"], "symbolic": batch["symbolic"], "sentiments_vector": batch["sentiments_vector"]}
-            sym_bar_ids = batch["sym_bar_ids"]
-
-        logits = self(x, z=z, labels=labels, bar_ids=bar_ids, position_ids=position_ids, symbolic_bar_ids=sym_bar_ids)
+        z, symb_bar_ids = self._build_z_input(batch)
+        logits = self(x, z=z, labels=labels, bar_ids=bar_ids, position_ids=position_ids, symbolic_bar_ids=symb_bar_ids)
         # Shape of logits: (batch_size, tgt_len, tuple_size, vocab_size)
         pred = logits.view(-1, logits.shape[-1])
         labels = labels.reshape(-1)
@@ -380,38 +330,17 @@ class MIDIGeneratorModule(pl.LightningModule):
         ), f"Input, bar and position ids weren't of compatible shapes: {x.shape}, {bar_ids.shape}, {position_ids.shape}"
 
         batch_size, curr_len = x.shape
-
         i = curr_len - 1
 
-        # Check for latents, symbolic, and sentiments
-        z, sym_bar_ids = None, None
-        if batch is not None:
-            if batch.get("latents") is not None and batch.get("symbolic") is None and batch.get("sentiments_vector") is None:
-                z = {"latents": batch["latents"]}
-            elif batch.get("symbolic") is not None and batch.get("latents") is None and batch.get("sentiments_vector") is None:
-                z = {"symbolic": batch["symbolic"]}
-                sym_bar_ids = batch["sym_bar_ids"]
-            elif batch.get("latents") is not None and batch.get("symbolic") is not None and batch.get("sentiments_vector") is None:
-                z = {"latents": batch["latents"], "symbolic": batch["symbolic"]}
-                sym_bar_ids = batch["sym_bar_ids"]
-            elif batch.get("sentiments_vector") is not None and batch.get("latents") is None and batch.get("symbolic") is None:
-                z = {"sentiments_vector": batch["sentiments_vector"]}
-            elif batch.get("latents") is not None and batch.get("sentiments_vector") is not None and batch.get("symbolic") is None:
-                z = {"latents": batch["latents"], "sentiments_vector": batch["sentiments_vector"]}
-            elif batch.get("symbolic") is not None and batch.get("sentiments_vector") is not None and batch.get("latents") is None:
-                z = {"symbolic": batch["symbolic"], "sentiments_vector": batch["sentiments_vector"]}
-                sym_bar_ids = batch["sym_bar_ids"]
-            elif batch.get("latents") is not None and batch.get("symbolic") is not None and batch.get("sentiments_vector") is not None:
-                z = {"latents": batch["latents"], "symbolic": batch["symbolic"], "sentiments_vector": batch["sentiments_vector"]}
-                sym_bar_ids = batch["sym_bar_ids"]
+        # Get z input using the helper function
+        z, symb_bar_ids = self._build_z_input(batch)
 
         is_done = torch.zeros(batch_size, dtype=torch.bool).to(self._device)
 
         # Precompute encoder hidden states for cross-attention
         encoder_hidden_states = None
-        if batch is not None:
-            if batch.get("latents") is not None and batch.get("symbolic") is None and batch.get("sentiments_vector") is None:
-                encoder_hidden_states = self.encode(z, sym_bar_ids)
+        if z is not None and "latents" in z:  # TODO: Check if we include symbolic features and emotions in pre-compute hidden states
+            encoder_hidden_states = self.encode(z, symb_bar_ids)
 
         curr_bars = torch.zeros(batch_size).fill_(-1).to(self._device)
         # Sample using decoder until max_length is reached or all sequences are done
@@ -431,11 +360,11 @@ class MIDIGeneratorModule(pl.LightningModule):
 
                     if bars_changed:
                         z_ = torch.zeros(batch_size, self.context_size, dtype=torch.int)
-                        sym_bar_ids_ = torch.zeros(batch_size, self.context_size, dtype=torch.int).to(self._device)
+                        symb_bar_ids_ = torch.zeros(batch_size, self.context_size, dtype=torch.int).to(self._device)
 
                         for j in range(batch_size):
                             curr_bar = bar_ids_[j, 0].to(self._device)
-                            indices = torch.nonzero(sym_bar_ids[j].to(self._device) == curr_bar)
+                            indices = torch.nonzero(symb_bar_ids[j].to(self._device) == curr_bar)
                             if indices.size(0) > 0:
                                 idx = indices[0, 0]
                             else:
@@ -444,17 +373,15 @@ class MIDIGeneratorModule(pl.LightningModule):
                             offset = min(self.context_size, desc.size(1) - idx)
 
                             z_[j, :offset] = desc[j, idx : idx + offset]
-                            sym_bar_ids_[j, :offset] = sym_bar_ids[j, idx : idx + offset]
+                            symb_bar_ids_[j, :offset] = symb_bar_ids[j, idx : idx + offset]
 
-                        z_, sym_bar_ids_ = z_.to(self._device), sym_bar_ids_.to(self._device)
+                        z_, symb_bar_ids_ = z_.to(self._device), symb_bar_ids_.to(self._device)
                         z_ = {"symbolic": z_}
 
                         if z.get("latents") is not None:
                             z_["latents"] = z["latents"].to(self._device)
-                        if z.get("sentiments_vector") is not None:
-                            z_["sentiments_vector"] = z["sentiments_vector"].to(self._device)
 
-                        encoder_hidden_states = self.encode(z_, sym_bar_ids_)
+                        encoder_hidden_states = self.encode(z_, symb_bar_ids_)
 
             logits = self.decode(x_, bar_ids=bar_ids_, position_ids=position_ids_, encoder_hidden_states=encoder_hidden_states)
 

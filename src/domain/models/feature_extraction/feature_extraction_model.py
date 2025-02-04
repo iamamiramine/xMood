@@ -12,3 +12,4 @@ class SymbolicFeaturesParameters(BaseModel):
         Optional[str], Query(description="Directory containing the processed pkl file. If not provided, will use PROCESSED_PATH/dataset_name")
     ] = None
     save: Annotated[bool, Query(description="Whether to save the output")] = True
+    level: Annotated[str, Query(description="Level of features to extract")] = "piece"

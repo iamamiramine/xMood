@@ -15,11 +15,11 @@ def load_emotion_mapper_from_checkpoint(checkpoint_dir: str, eval=True):
 
 
 def read_labels(dataset_name, split: str = None):
-    path = os.path.join(LABELS_PATH, dataset_name, split, f"{split}_labels.csv") if split else os.path.join(LABELS_PATH, dataset_name, "labels.csv")
+    path = os.path.join(LABELS_PATH, split, f"{split}_labels.csv") if split else os.path.join(LABELS_PATH, "labels.csv")
     labels = pd.read_csv(str(path))
     label_columns = labels.columns
     label_columns = label_columns.drop("file")
-    midi_files = glob.glob(os.path.join(os.path.join(MIDI_PATH, dataset_name), "**/*.mid"), recursive=True)
+    midi_files = glob.glob(os.path.join(MIDI_PATH, "**/*.mid"), recursive=True)
 
     all_labels = []
 
@@ -77,15 +77,13 @@ def convert_emotions_to_sequence(emotions_vector, bar=None):
         List of tokens in the format [BAR_X ANGER_Y LOVE_Z SADNESS_W JOY_V SURPRISE_U]
     """
     # Convert floating point values to integer percentages
-    emotion_values = [int(e * 100) for e in emotions_vector]
-
     sequence = []
     if bar is not None:
         sequence.append(f"{BAR_KEY}_{bar}")
 
     # Add emotion tokens with their values
     emotion_keys = [ANGER_KEY, LOVE_KEY, SADNESS_KEY, JOY_KEY, SURPRISE_KEY]
-    for key, value in zip(emotion_keys, emotion_values):
+    for key, value in zip(emotion_keys, emotions_vector):
         sequence.append(f"{key}_{value}")
 
     return sequence

@@ -33,10 +33,36 @@
     "w": 4,
     "batch_size": 10
   },
+  "projector": {
+    "training_name": "projector_test",
+    "load_from_checkpoint": false,
+    "checkpoint_path": "output/experiments/experiment_9/checkpoints/Emotion4MIDI_Sample/projector_test/checkpoints/last.ckpt",
+    "target_batch_size": 256,
+    "device": "cuda",
+    "epochs": 50,
+    "max_training_steps": 100000,
+    "lr": 1e-4,
+    "lr_schedule": "const",
+    "warmup_steps": 4000,
+    "max_steps": 100000000000000000000,
+    "encoder_layers": 6,
+    "decoder_layers": 8,
+    "intermediate_size": 2048,
+    "num_attention_heads": 8,
+    "generate": {
+      "max_bars": 16,
+      "max_length": 1024,
+      "context_size": 256,
+      "temperature": 0.8,
+      "prompt_name": "generated_features",
+      "input_file": "2ffc287a0ac331b905701a8f85b6c032.mid",
+      "output_folder": "generated_features"
+    }
+  },
   "generator": {
     "training_name": "default",
     "load_from_checkpoint": false,
-    "checkpoint_path": "",
+    "checkpoint_path": "last.ckpt",
     "target_batch_size": 256,
     "device": "cuda",
     "epochs": 100,
@@ -57,7 +83,7 @@
       "initial_context": 256,
       "context_size": 256,
       "prompt_name": "generated_sample",
-      "file": "0a0a52a35fa8a6384ef810e82d5ba53c.mid__representation",
+      "file": "0a0a52a35fa8a6384ef810e82d5ba53c.mid_processed.pkl",
       "output_folder": "generated_samples"
     }
   },

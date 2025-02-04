@@ -1,10 +1,10 @@
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.messages.base import BaseMessage
 
-from application.captioning.models.tokenized_chat_prompt_model import (
+from application.projection.models.tokenized_chat_prompt_model import (
     BasicTokenizedChatPromptTemplate,
 )
-from application.captioning.helpers.document_helper import format_docs
+from application.projection.helpers.document_helper import format_docs
 
 
 def find_similar(vs, query):

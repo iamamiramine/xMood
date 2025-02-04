@@ -225,53 +225,38 @@ class DataloaderDataset(IterableDataset):
 
         for i in range(split_len):
             try:
-                if self.encode:
-                    # For encoding mode, just yield the file path
-                    yield {"file": self.split[i]}
-                    continue
-
+                processed_data = None
                 # Load processed data
                 processed_file = os.path.join(
                     str(PROCESSED_PATH),
                     self.dataset_name,
                     f"{os.path.basename((self.split[i]))}_processed.pkl",
                 )
-                processed_data = pickle.load(open(processed_file, "rb"))
+                if os.path.exists(processed_file):
+                    processed_data = pickle.load(open(processed_file, "rb"))
 
-                if self.caption:
-                    # For captioning mode, yield only the required features
-                    x = {"file": os.path.basename(self.split[i])}
+                if self.encode:
+                    if processed_data and "encoding" in processed_data:
+                        continue
+                    else:
+                        # For encoding mode, just yield the file path
+                        yield {"file": self.split[i]}
+                        continue
 
-                    # Get symbolic features
-                    if "symbolic_features" in processed_data:
-                        x["note_density"] = processed_data["symbolic_features"]["piece_level"]["note_density"]
-                        x["mean_velocity"] = processed_data["symbolic_features"]["piece_level"]["mean_velocity"]
-                        x["mean_pitch"] = processed_data["symbolic_features"]["piece_level"]["mean_pitch"]
-                        x["mean_duration"] = processed_data["symbolic_features"]["piece_level"]["mean_duration"]
-                        x["time_signatures"] = processed_data["symbolic_features"]["piece_level"]["time_signatures"]
-                        x["key_signatures"] = processed_data["symbolic_features"]["piece_level"]["key_signatures"]
-                        x["chords"] = processed_data["symbolic_features"]["piece_level"]["chords"]
-                        x["instruments"] = processed_data["symbolic_features"]["piece_level"]["instruments"]
-
-                    # # Get metadata and emotions
-                    # midi_labels_df, label_columns = read_label_for_midi(self.dataset_name, x["file"])
-                    # if midi_labels_df is not None:
-                    #     x["emotions"] = midi_labels_df[label_columns].values.flatten().tolist()  # TODO: Convert to tokens
-                    #     if "genre" in midi_labels_df.columns:
-                    #         x["genre"] = midi_labels_df["genre"].values[0]
-                    #     if "composer" in midi_labels_df.columns:
-                    #         x["composer"] = midi_labels_df["composer"].values[0]
-
-                    yield x
+                # Skip if no processed data available
+                if not processed_data:
+                    print(f"No processed data available for {self.split[i]}")
                     continue
 
-                # Get encoding
                 encoding = processed_data["encoding"]
 
                 # Get symbolic features if needed
-                symbolic = None
+                bar_symbolic, piece_symbolic = None, None
                 if self.load_symb and "symbolic_features" in processed_data:
-                    symbolic = processed_data["symbolic_features"]["symbolic"]
+                    if "bar_symbolic" in processed_data["symbolic_features"]:
+                        bar_symbolic = processed_data["symbolic_features"]["bar_symbolic"]
+                    if "piece_symbolic" in processed_data["symbolic_features"]:
+                        piece_symbolic = processed_data["symbolic_features"]["piece_symbolic"]
 
                 # Get latents if needed
                 latents = None
@@ -279,6 +264,14 @@ class DataloaderDataset(IterableDataset):
                 if self.load_latent and "latents" in processed_data:
                     latents = processed_data["latents"]["latents"]
                     codes = processed_data["latents"]["codes"]
+
+                # Get emotion vector if needed
+                piece_emotions_vector, piece_emotions_tokens = None, None
+                if self.load_emotions and "emotions" in processed_data:
+                    if "piece_emotions_vector" in processed_data["emotions"]["piece_emotions"]:
+                        piece_emotions_vector = processed_data["emotions"]["piece_emotions"]["piece_emotions_vector"]
+                    if "piece_emotions_tokens" in processed_data["emotions"]["piece_emotions"]:
+                        piece_emotions_tokens = processed_data["emotions"]["piece_emotions"]["piece_emotions_tokens"]
 
                 # Get or generate representation
                 file = os.path.basename(self.split[i])
@@ -296,7 +289,10 @@ class DataloaderDataset(IterableDataset):
                     events,
                     latents,
                     codes,
-                    symbolic,
+                    bar_symbolic,
+                    piece_symbolic,
+                    piece_emotions_vector,
+                    piece_emotions_tokens,
                     save=False,
                 )
 

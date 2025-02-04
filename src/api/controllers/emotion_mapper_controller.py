@@ -9,24 +9,24 @@ from application.emotion_mapper.services import emotion_mapper_service
 router = APIRouter()
 
 
-@router.post("/preprocess_dataset_emotions")
-def preprocess_dataset_emotions(dataset_name: str) -> dict:
+@router.post("/extract_emotion_vectors")
+def extract_emotion_vectors(dataset_name: str) -> dict:
     """
     Description:
     ------------
-        Preprocess Dataset Emotions
+        Extract emotion vectors for all MIDI files in a dataset
 
     Parameters:
     -----------
         dataset_name: str
+            Name of the dataset to process
 
     Returns:
     --------
     dict
-        A dictionary
-
+        A dictionary containing the extraction status message
     """
-    return emotion_mapper_service.preprocess_dataset_emotions(dataset_name)
+    return emotion_mapper_service.extract_emotion_vectors(dataset_name)
 
 
 @router.post("/train_emotion_mapper")

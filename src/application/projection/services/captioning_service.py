@@ -10,13 +10,13 @@ from langchain.retrievers import EnsembleRetriever
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.chat_message_histories import ChatMessageHistory
 
-from application.captioning.helpers.document_helper import save_text_chunks, load_text_chunks, has_dataset_changed, load_txt_files, split_documents
-from application.captioning.helpers.vector_db_helper import create_vector_db
-from application.captioning.helpers.retreival_chain_helper import (
+from application.projection.helpers.document_helper import save_text_chunks, load_text_chunks, has_dataset_changed, load_txt_files, split_documents
+from application.projection.helpers.vector_db_helper import create_vector_db
+from application.projection.helpers.retreival_chain_helper import (
     prepare_basic_prompt,
 )
-from application.captioning.helpers.memory_helper import create_memory_chain
-from application.captioning.models.captioning_model import CaptioningModule
+from application.projection.helpers.memory_helper import create_memory_chain
+from application.projection.models.captioning_model import CaptioningModule
 from application.dataloader.models.dataloader_model import DataloaderModule
 from domain.models.captioning.captioning_model import (
     CaptionParameters,
@@ -163,7 +163,7 @@ def caption_midi(parameters: CaptionParameters) -> Dict[str, Any]:
         Dict[str, Any]: Generated caption or error message
     """
     try:
-        # Initialize captioning model
+        # Initialize projection model
         captioner = CaptioningModule(
             model_id=parameters.model_id,
             max_new_tokens=parameters.max_new_tokens,
@@ -206,7 +206,7 @@ def caption_dataset(parameters: CaptionDatasetParameters) -> Dict[str, Any]:
         dataloader_config = config["dataloader"]
         print("Loaded configuration", flush=True)
 
-        # Initialize captioning model with configuration
+        # Initialize projection model with configuration
         captioner = CaptioningModule(
             model_id=parameters.model_id,
             max_new_tokens=parameters.max_new_tokens,
@@ -214,12 +214,12 @@ def caption_dataset(parameters: CaptionDatasetParameters) -> Dict[str, Any]:
             force_reload=parameters.force_reload,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        print("Initialized captioning model", flush=True)
+        print("Initialized projection model", flush=True)
 
         # Initialize dataloader module with config parameters
         dataloader = DataloaderModule(
             dataset_name=dataloader_config["dataset_name"],
-            context_size=-1,  # Override context_size for captioning
+            context_size=-1,  # Override context_size for projection
             max_positions=dataloader_config["max_positions"],
             max_bars=dataloader_config["max_bars"],
             max_bars_per_context=dataloader_config["max_bars_per_context"],
@@ -281,5 +281,5 @@ def caption_dataset(parameters: CaptionDatasetParameters) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print(f"Error in dataset captioning: {str(e)}", flush=True)
-        return {"error": True, "message": str(e), "details": "An error occurred during dataset captioning"}
+        print(f"Error in dataset projection: {str(e)}", flush=True)
+        return {"error": True, "message": str(e), "details": "An error occurred during dataset projection"}

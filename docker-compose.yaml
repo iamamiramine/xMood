@@ -13,6 +13,7 @@ services:
       TORCH_USE_CUDA_DSA: "1"
       CUDA_LAUNCH_BLOCKING: "1"
       TRANSFORMERS_CACHE: "/app/shared/huggingface"
+      # OPENAI_API_KEY: "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"
     ports:
       - "8000:80"
     volumes:

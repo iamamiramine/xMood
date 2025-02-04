@@ -54,6 +54,29 @@ from domain.constants.encoder.token_constants import (
     SADNESS_KEY,
     JOY_KEY,
     SURPRISE_KEY,
+    ADMIRATION_KEY,
+    AMUSEMENT_KEY,
+    ANNOYANCE_KEY,
+    APPROVAL_KEY,
+    CARING_KEY,
+    CONFUSION_KEY,
+    CURIOSITY_KEY,
+    DESIRE_KEY,
+    DISAPPOINTMENT_KEY,
+    DISAPPROVAL_KEY,
+    DISGUST_KEY,
+    EMBARRASSMENT_KEY,
+    EXCITEMENT_KEY,
+    FEAR_KEY,
+    GRATITUDE_KEY,
+    GRIEF_KEY,
+    NERVOUSNESS_KEY,
+    NEUTRAL_KEY,
+    OPTIMISM_KEY,
+    PRIDE_KEY,
+    REALIZATION_KEY,
+    RELIEF_KEY,
+    REMORSE_KEY,
 )
 
 
@@ -457,7 +480,9 @@ class SymbolicFeaturesVocab(Vocab):
 
         # Generate statistical feature tokens
         # Bar position markers (e.g., "Bar_0", "Bar_1", ...)
-        bar_tokens = [f"Bar_{i}" for i in range(MAX_N_BARS)]
+        bar_tokens = [f"{BAR_KEY}_{i}" for i in range(MAX_N_BARS)]
+        # Position within bar markers (e.g., "Position_0", "Position_1", ...)
+        position_tokens = [f"{POSITION_KEY}_{i}" for i in range(MAX_BAR_LENGTH * 4 * DEFAULT_POS_PER_QUARTER)]  # Positions within bars
         # Note density tokens (number of notes per time unit)
         density_tokens = [f"{NOTE_DENSITY_KEY}_{i}" for i in range(len(DEFAULT_NOTE_DENSITY_BINS))]
         # Mean velocity tokens (average note loudness)
@@ -479,6 +504,7 @@ class SymbolicFeaturesVocab(Vocab):
             + pitch_tokens  # Dynamic level statistics
             + duration_tokens  # Pitch height statistics
             + bar_tokens  # Note length statistics  # Structural organization
+            + position_tokens  # Temporal organization
         )
 
         # Create counter and initialize vocabulary
@@ -496,14 +522,11 @@ class EmotionVocab(Vocab):
     1. Structural Elements:
        - Bar markers for temporal organization of emotions
 
-    2. Emotion Categories (0-99% intensity for each):
-       - Anger: Intensity of angry or aggressive emotions
-       - Love: Intensity of loving or tender emotions
-       - Sadness: Intensity of sad or melancholic emotions
-       - Joy: Intensity of happy or uplifting emotions
-       - Surprise: Intensity of surprising or unexpected emotions
+    2. Emotion Categories (0.0000-1.0000 intensity for each):
+       - All standard emotions from the emotion classification model
+       Each emotion intensity is represented with 4 decimal precision
 
-    Each emotion is represented with percentage granularity (0-99),
+    Each emotion is represented with 4 decimal precision (0.0000-1.0000),
     allowing for precise emotion intensity representation at each bar.
 
     Inherits from:
@@ -516,47 +539,62 @@ class EmotionVocab(Vocab):
 
         The initialization process:
         1. Creates bar position tokens for temporal organization
-        2. Creates tokens for each emotion category with percentage granularity
+        2. Creates tokens for each emotion category with 4 decimal precision
         3. Combines tokens in a specific order for consistent indexing
 
         Token formats:
         - Bar tokens: "Bar_0", "Bar_1", etc.
-        - Emotion tokens: "{emotion}_0" to "{emotion}_99" for each emotion
+        - Emotion tokens: "{emotion}_{0.0000}" to "{emotion}_{1.0000}" for each emotion
 
         Note:
-            The percentage range (0-99) allows for fine-grained emotion intensity
-            representation, where 0 represents absence and 99 represents maximum
+            The decimal range (0.0000-1.0000) allows for fine-grained emotion intensity
+            representation, where 0.0000 represents absence and 1.0000 represents maximum
             intensity of that emotion.
         """
         # Generate structural tokens
-        # Bar position markers for temporal organization (e.g., "Bar_0", "Bar_1", ...)
         bar_tokens = [f"Bar_{i}" for i in range(MAX_N_BARS)]
 
-        # Generate emotion intensity tokens
-        # Anger emotion tokens (0-99% intensity)
-        anger_tokens = [f"{ANGER_KEY}_{i}" for i in range(100)]  # e.g., "anger_0" to "anger_99"
-        # Love emotion tokens (0-99% intensity)
-        love_tokens = [f"{LOVE_KEY}_{i}" for i in range(100)]  # e.g., "love_0" to "love_99"
-        # Sadness emotion tokens (0-99% intensity)
-        sadness_tokens = [f"{SADNESS_KEY}_{i}" for i in range(100)]  # e.g., "sadness_0" to "sadness_99"
-        # Joy emotion tokens (0-99% intensity)
-        joy_tokens = [f"{JOY_KEY}_{i}" for i in range(100)]  # e.g., "joy_0" to "joy_99"
-        # Surprise emotion tokens (0-99% intensity)
-        surprise_tokens = [f"{SURPRISE_KEY}_{i}" for i in range(100)]  # e.g., "surprise_0" to "surprise_99"
+        # Function to generate emotion tokens with 4 decimal precision
+        def generate_emotion_tokens(emotion_key):
+            return [f"{emotion_key}_{i/10000:.4f}" for i in range(10001)]
+
+        # Generate emotion intensity tokens for all emotions
+        emotion_tokens = []
+        for emotion_key in [
+            ANGER_KEY,
+            LOVE_KEY,
+            SADNESS_KEY,
+            JOY_KEY,
+            SURPRISE_KEY,
+            ADMIRATION_KEY,
+            AMUSEMENT_KEY,
+            ANNOYANCE_KEY,
+            APPROVAL_KEY,
+            CARING_KEY,
+            CONFUSION_KEY,
+            CURIOSITY_KEY,
+            DESIRE_KEY,
+            DISAPPOINTMENT_KEY,
+            DISAPPROVAL_KEY,
+            DISGUST_KEY,
+            EMBARRASSMENT_KEY,
+            EXCITEMENT_KEY,
+            FEAR_KEY,
+            GRATITUDE_KEY,
+            GRIEF_KEY,
+            NERVOUSNESS_KEY,
+            NEUTRAL_KEY,
+            OPTIMISM_KEY,
+            PRIDE_KEY,
+            REALIZATION_KEY,
+            RELIEF_KEY,
+            REMORSE_KEY,
+        ]:
+            emotion_tokens.extend(generate_emotion_tokens(emotion_key))
 
         # Combine all tokens in a specific order
-        # Order: Structural markers -> Emotion intensities
-        self.tokens = (
-            bar_tokens
-            + anger_tokens  # Temporal organization
-            + love_tokens  # Anger intensity levels
-            + sadness_tokens  # Love intensity levels
-            + joy_tokens  # Sadness intensity levels
-            + surprise_tokens  # Joy intensity levels  # Surprise intensity levels
-        )
+        self.tokens = bar_tokens + emotion_tokens
 
         # Create counter and initialize vocabulary
-        # Convert token list to Counter for vocabulary creation
         counter = Counter(self.tokens)
-        # Initialize parent Vocab class with the combined tokens
         super().__init__(counter)

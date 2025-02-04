@@ -12,16 +12,17 @@ from transformers import BloomTokenizerFast
 
 from langchain_huggingface.llms import HuggingFacePipeline
 from transformers import BitsAndBytesConfig, pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from application.captioning.helpers.document_helper import (
+from application.projection.helpers.document_helper import (
     save_text_chunks,
     load_text_chunks,
     has_dataset_changed,
     load_txt_files,
     split_documents,
 )
-from application.captioning.helpers.vector_db_helper import create_vector_db
-from application.captioning.helpers.retreival_chain_helper import (
+from application.projection.helpers.vector_db_helper import create_vector_db
+from application.projection.helpers.retreival_chain_helper import (
     prepare_basic_prompt,
 )
 
@@ -52,7 +53,7 @@ class CaptioningModule(pl.LightningModule):
         print("CaptioningModule initialized", flush=True)
 
     def setup(self, stage=None):
-        """Initialize all components needed for captioning."""
+        """Initialize all components needed for projection."""
         print(f"Setting up CaptioningModule for stage: {stage}", flush=True)
         if self.pipeline is None:
             self._setup_pipeline()
@@ -70,16 +71,13 @@ class CaptioningModule(pl.LightningModule):
             # Load tokenizer from local model files
             quantization_config = BitsAndBytesConfig(load_in_4bit=True)
 
-            model = BloomForCausalLM.from_pretrained(
-                self.model_id,
-                torch_dtype=torch.float16,
-                local_files_only=True,
-                device_map="auto",
-                quantization_config=quantization_config,
-                trust_remote_code=False,
-            )
-            tokenizer = BloomTokenizerFast.from_pretrained(self.model_id)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+            model = AutoModelForCausalLM.from_pretrained(self.model_id, device_map="auto", quantization_config=quantization_config)
+
+            self.model = model
             self.tokenizer = tokenizer
+
+            # llm = OpenAI(model_name="text-davinci-003")
 
             # Create HuggingFace pipeline with specified parameters
             pipe = pipeline(
@@ -88,11 +86,10 @@ class CaptioningModule(pl.LightningModule):
                 tokenizer=tokenizer,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
-                temperature=0.1,  # Reduced from 0.7 to minimize randomness
-                top_p=0.5,  # Reduced from 0.9 to be more conservative
-                top_k=10,  # Reduced from 50 to limit token choices
-                repetition_penalty=1.2,  # Increased from 1.1 to further prevent loops
-                no_repeat_ngram_size=3,  # Prevent repeating of 3-grams
+                temperature=0.75,  # Reduced from 0.7 to minimize randomness
+                top_p=0.9,  # Reduced from 0.9 to be more conservative
+                top_k=50,  # Reduced from 50 to limit token choices
+                repetition_penalty=1.1,  # Increased from 1.1 to further prevent loops
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
                 return_full_text=False,  # Only return new tokens
@@ -100,14 +97,6 @@ class CaptioningModule(pl.LightningModule):
 
             # Create LangChain pipeline wrapper
             self.pipeline = HuggingFacePipeline(pipeline=pipe)
-
-            # self.pipeline = HuggingFacePipeline.from_model_id(
-            #     model_id=self.model_id,
-            #     task="text-generation",
-            #     pipeline_kwargs={"max_new_tokens": self.max_new_tokens},
-            #     device=0,
-            #     quantization_config=quantization_config,
-            # )
         except Exception as e:
             print(f"Error loading pipeline: {e}", flush=True)
             raise e
@@ -160,13 +149,12 @@ class CaptioningModule(pl.LightningModule):
             if self.chain_type == "basic":
                 basic_prompt = prepare_basic_prompt(self.tokenizer)
                 self.chain = basic_prompt | self.pipeline
-                # self.chain = create_memory_chain(self.pipeline, None, ChatMessageHistory(), basic_prompt)
         except Exception as e:
             print(f"Error loading chain: {e}", flush=True)
             raise e
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        """Process a batch for captioning using symbolic features and metadata."""
+        """Process a batch for projection using symbolic features and metadata."""
         print(f"Starting predict_step with batch_idx: {batch_idx}", flush=True)
         try:
             # Ensure setup is complete
@@ -175,7 +163,6 @@ class CaptioningModule(pl.LightningModule):
 
             # Process each item in the batch
             results = []
-            # print(batch, flush=True)
             batch_size = len(batch["files"])
             print(f"Processing {batch_size} files in batch {batch_idx}", flush=True)
 
@@ -199,19 +186,14 @@ class CaptioningModule(pl.LightningModule):
                     "emotions": batch["emotions"][i] if "emotions" in batch else None,
                 }
 
-                # Print batch contents for debugging
-                print(f"Batch keys: {batch.keys()}", flush=True)
-                print(f"Item contents: {item}", flush=True)
-
                 # Prepare prompt from features
                 print(f"Generated prompt for {file}: {item}", flush=True)
 
                 try:
                     # Generate caption using the chain
-                    output = self.chain.invoke(item, config={"configurable": {"session_id": "foo"}})
-                    caption = output.split("A:")[0].strip() if "A:" in output else output.strip()
-                    print(f"Generated caption for {file}: {caption}", flush=True)
-                    results.append({"file": file, "llm_output": caption})
+                    output = self.chain.invoke(item)
+                    print(f"Generated caption for {file}: {output}", flush=True)
+                    results.append({"file": file, "llm_output": output})
                 except Exception as e:
                     print(f"Error generating caption for {file}: {str(e)}", flush=True)
                     results.append({"file": file, "error": True, "message": str(e)})

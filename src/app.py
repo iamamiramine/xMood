@@ -33,7 +33,7 @@ tags_metadata = [
         "description": "Emotion Mapper",
     },
     {
-        "name": "captioning",
+        "name": "projection",
         "description": "Captioning",
     },
     {
@@ -82,8 +82,8 @@ app.include_router(
 )
 app.include_router(
     captioning_controller.router,
-    prefix="/captioning",
-    tags=["captioning"],
+    prefix="/projection",
+    tags=["projection"],
     responses={404: {"description": "Not found"}},
 )
 app.include_router(

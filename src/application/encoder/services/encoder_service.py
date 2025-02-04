@@ -14,6 +14,7 @@ from domain.models.encoder.encoder_model import EncodeParameters
 
 # Constants - File paths
 from domain.constants.paths_constants import PROCESSED_PATH
+from persistence.dataloader.repositories.dataloader_repository import async_load
 
 
 def encode_midi(parameters: EncodeParameters) -> dict:

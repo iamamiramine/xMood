@@ -35,7 +35,6 @@ from application.emotion_mapper.models.emotion_mapper_model import EmotionMapper
 from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     EMOTION_MAPPING_PATH,
-    LABELS_PATH,
     PROCESSED_PATH,
 )
 
@@ -45,26 +44,86 @@ from domain.models.emotion_mapper.emotion_mapper_model import (
     EmotionMapperGenerateParameters,
 )
 
+# Emotion keys
+from domain.constants.encoder.token_constants import (
+    ANGER_KEY,
+    LOVE_KEY,
+    SADNESS_KEY,
+    JOY_KEY,
+    SURPRISE_KEY,
+    ADMIRATION_KEY,
+    AMUSEMENT_KEY,
+    ANNOYANCE_KEY,
+    APPROVAL_KEY,
+    CARING_KEY,
+    CONFUSION_KEY,
+    CURIOSITY_KEY,
+    DESIRE_KEY,
+    DISAPPOINTMENT_KEY,
+    DISAPPROVAL_KEY,
+    DISGUST_KEY,
+    EMBARRASSMENT_KEY,
+    EXCITEMENT_KEY,
+    FEAR_KEY,
+    GRATITUDE_KEY,
+    GRIEF_KEY,
+    NERVOUSNESS_KEY,
+    NEUTRAL_KEY,
+    OPTIMISM_KEY,
+    PRIDE_KEY,
+    REALIZATION_KEY,
+    RELIEF_KEY,
+    REMORSE_KEY,
+)
 
-def preprocess_dataset_emotions(dataset_name: str, save: bool = True) -> dict:
-    """Preprocess emotion vectors into sequences for an entire dataset.
+
+def extract_emotion_vectors(dataset_name: str) -> dict:
+    """Extract emotion vectors for all MIDI files in a dataset and save them to processed files.
 
     Args:
         dataset_name: Name of the dataset to process
-        split: Optional split name (train/val/test)
-        save: Whether to save the processed sequences
 
     Returns:
         Dictionary containing the processing summary
     """
-    # Create output directory if saving
-    if save:
-        out_dir = os.path.join(LABELS_PATH, dataset_name, "emotion_sequences")
-        os.makedirs(out_dir, exist_ok=True)
+    processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
+    if not os.path.exists(processed_dir):
+        os.makedirs(processed_dir)
 
     # Read emotion labels
     labels_df, label_columns = read_labels(dataset_name)
-    emotion_vocab = EmotionVocab()
+
+    # Get all emotion keys from token_constants that are present in label_columns
+    emotion_key_mapping = {
+        "anger": ANGER_KEY,
+        "love": LOVE_KEY,
+        "sadness": SADNESS_KEY,
+        "joy": JOY_KEY,
+        "surprise": SURPRISE_KEY,
+        "admiration": ADMIRATION_KEY,
+        "amusement": AMUSEMENT_KEY,
+        "annoyance": ANNOYANCE_KEY,
+        "approval": APPROVAL_KEY,
+        "caring": CARING_KEY,
+        "confusion": CONFUSION_KEY,
+        "curiosity": CURIOSITY_KEY,
+        "desire": DESIRE_KEY,
+        "disappointment": DISAPPOINTMENT_KEY,
+        "disapproval": DISAPPROVAL_KEY,
+        "disgust": DISGUST_KEY,
+        "embarrassment": EMBARRASSMENT_KEY,
+        "excitement": EXCITEMENT_KEY,
+        "fear": FEAR_KEY,
+        "gratitude": GRATITUDE_KEY,
+        "grief": GRIEF_KEY,
+        "nervousness": NERVOUSNESS_KEY,
+        "neutral": NEUTRAL_KEY,
+        "optimism": OPTIMISM_KEY,
+        "pride": PRIDE_KEY,
+        "realization": REALIZATION_KEY,
+        "relief": RELIEF_KEY,
+        "remorse": REMORSE_KEY,
+    }
 
     processed = 0
     errors = []
@@ -73,33 +132,41 @@ def preprocess_dataset_emotions(dataset_name: str, save: bool = True) -> dict:
     for idx, row in labels_df.iterrows():
         try:
             file_name = row["file_name"]
-            emotions = row[label_columns].values
 
-            # Create sequences for each bar (assuming max 512 bars per piece)
-            emotion_tokens = convert_emotions_to_sequence(emotions)
+            # Create emotion vector with values for each emotion present in labels
+            emotion_vector = []
+            emotion_tokens = []
 
-            # Encode tokens
-            encoded_emotions = emotion_vocab.encode(emotion_tokens)
+            # Process each emotion label that exists in our data
+            for label in label_columns:
+                if label.lower() in emotion_key_mapping:
+                    value = float(row[label])  # Get the emotion value
+                    emotion_key = emotion_key_mapping[label.lower()]
+                    emotion_tokens.append(f"{emotion_key}_{value:.4f}")
+                    emotion_vector.append(value)
 
-            result = {
-                "file": file_name,
-                "emotion_tokens": emotion_tokens,
-                "encoded_emotions": encoded_emotions,
-                "decoded_emotions": emotion_vocab.decode(encoded_emotions),
-                "emotions_vector": emotions,
+            # Load existing processed data
+            try:
+                processed_data = async_load(processed_dir, file_name, "processed")
+                processed_data["emotions"] = {}
+            except FileNotFoundError:
+                # Skip if processed file doesn't exist yet
+                continue
+
+            # Add emotion vector and tokens to processed data
+            processed_data["emotions"]["piece_emotions"] = {
+                "piece_emotions_vector": emotion_vector,
+                "piece_emotions_tokens": emotion_tokens,
             }
 
-            if save:
-                output_file = os.path.join(out_dir, f"{file_name}_emotions.pkl")
-                with open(output_file, "wb") as f:
-                    pickle.dump(result, f)
-
+            # Save back to processed file
+            save_async(processed_dir, file_name, processed_data, "processed")
             processed += 1
 
         except Exception as e:
             errors.append(f"Error processing {file_name}: {str(e)}")
 
-    return {"Message": "Dataset Emotion Sequence Processing Complete"}
+    return {"Message": "Emotion Vector Extraction Complete"}
 
 
 def train_emotion_mapper(parameters: EmotionMapperTrainingParameters) -> dict:
