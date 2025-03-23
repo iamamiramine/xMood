@@ -5,7 +5,7 @@
     "max_bar_length": 3
   },
   "dataloader": {
-    "dataset_name": "MIDICaps",
+    "dataset_name": "XMIDI",
     "context_size": 512,
     "max_positions": 2048,
     "max_bars": 512,
@@ -60,13 +60,13 @@
     }
   },
   "generator": {
-    "training_name": "generator_demo_2",
-    "load_from_checkpoint": true,
-    "checkpoint_path": "output/demos/demo_2/checkpoints/MIDICaps/generator_demo_2/checkpoints/Generator_MIDICaps_Symbolic_Latent_Epoch_35.ckpt",
+    "training_name": "generator_test_3",
+    "load_from_checkpoint": false,
+    "checkpoint_path": "Generator_MIDICaps_Symbolic_Latent.ckpt",
     "target_batch_size": 256,
     "device": "cuda",
     "epochs": 50,
-    "max_training_steps": 1000000000,
+    "max_training_steps": 100000,
     "lr": 1e-4,
     "lr_schedule": "sqrt_decay",
     "warmup_steps": 4000,

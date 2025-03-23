@@ -1,4 +1,4 @@
 {
-  "DATASETS_PATH": "datasets/experiments/experiment_9/",
-  "ROOT_OUTPUT": "output/experiments/experiment_9/"
+  "DATASETS_PATH": "datasets/",
+  "ROOT_OUTPUT": "output/demos/demo_2/"
 }
