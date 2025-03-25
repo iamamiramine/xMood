@@ -5,7 +5,7 @@
     "max_bar_length": 3
   },
   "dataloader": {
-    "dataset_name": "MIDICaps",
+    "dataset_name": "ReMIDICaps",
     "context_size": 512,
     "max_positions": 2048,
     "max_bars": 512,
@@ -19,11 +19,62 @@
     "load_latent": true,
     "load_symb": true,
     "load_emotions": true,
+    "load_global_features": true,
+    "load_text_prompts": true,
     "train_val_test_split": [
       0.7,
       0.2,
       0.1
     ]
+  },
+  "multimodal_mapping": {
+    "training_name": "multimodal_mapper",
+    "device": "cuda",
+    "text_dim": 384,
+    "global_feature_dim": 371,
+    "global_feature_out_dim": 256,
+    "mood_dim": 12,
+    "mood_out_dim": 128,
+    "fusion_dim": 512,
+    "fusion_type": "linear_concat",
+    "fusion_heads": 8,
+    "hidden_dim": 512,
+    "latent_dim": 128,
+    "output_dim": 256,
+    "num_layers": 4,
+    "num_heads": 8,
+    "context_size": 16,
+    "dropout": 0.1,
+    "kl_start": 0.0,
+    "kl_end": 1.0,
+    "kl_anneal_steps": 10000,
+    "lr": 5e-5,
+    "lr_schedule": "cosine",
+    "warmup_steps": 2000,
+    "max_steps": 100000,
+    "epochs": 100,
+    "val_check_interval": 500,
+    "log_every_n_steps": 100,
+    "checkpoint_every_n_steps": 2000,
+    "feature_dimensions": {
+      "numeric_features": 4,
+      "time_signatures": 6,
+      "key_signatures": 24,
+      "instruments": 129,
+      "chords": 28,
+      "total_global_features": 191
+    },
+    "load_from_checkpoint": false,
+    "weights_path": "",
+    "config_path": "",
+    "max_training_steps": 100000,
+    "use_kl_annealing": true,
+    "generation": {
+      "num_bars": 8,
+      "temperature": 1.0,
+      "output_folder": "multimodal_features",
+      "output_name": "multimodal_features"
+    }
   },
   "encoder": {
     "alpha": 0.016,

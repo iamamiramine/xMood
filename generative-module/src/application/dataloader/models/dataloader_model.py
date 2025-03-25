@@ -17,13 +17,13 @@ from application.dataloader.helper.dataloader_helper import (
     represent_encoding,
 )
 from application.dataloader.models.dataloader_seq_collator_model import SeqCollator
-from application.emotion_mapper.helpers.emotion_mapper_helper import read_label_for_midi
 from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
 from domain.constants.encoder.token_constants import PAD_TOKEN
 from domain.constants.paths_constants import (
     MIDI_PATH,
     PROCESSED_PATH,
     LATENTS_PATH,
+    LABELS_PATH,
 )
 from persistence.dataloader.repositories.dataloader_repository import CPU_Unpickler
 
@@ -61,40 +61,32 @@ class DataloaderModule(LightningDataModule):
         load_latent,
         load_symb,
         load_emotions,
+        load_global_features=False,  # New parameter
+        load_text_prompts=False,  # New parameter
         encode=False,
         caption=False,
     ):
         super().__init__()
 
-        # ORIGINAL CODE - COMMENTED OUT TEMPORARILY
-        # self.midi_files = [
-        #     f
-        #     for ext in ["*.mid", "*.midi"]
-        #     for f in glob.glob(
-        #         os.path.join(MIDI_PATH, f"**/{ext}"),
-        #         recursive=True,
-        #     )
-        # ]
-        
-        ##################################################################################
-        # TODO: REMOVE TEMPORARY CODE: Only include MIDI files that are in ReMIDICapsMoodsTokens.csv
         self.midi_files = []
-        
-        # Path to the moods tokens CSV file
-        csv_file_path = 'datasets/MIDICaps/labels/ReMIDICapsMoodsTokens.csv'
-        
+
+        # Path to the CSV file using LABELS_PATH
+        csv_file_path = os.path.join(LABELS_PATH, dataset_name, f"{dataset_name}.csv")
+
         if os.path.exists(csv_file_path):
             # Read CSV file using pandas
-            self.mood_tokens_df = pd.read_csv(csv_file_path)
+            self.labels_df = pd.read_csv(csv_file_path)
             # Convert file column to a set for faster lookups
-            csv_file_names = set(self.mood_tokens_df['file'].values)
-            
+            csv_file_names = set(self.labels_df["file"].values)
+
             # Now find the actual full paths of these files
             for ext in ["*.mid", "*.midi"]:
                 for f in glob.glob(os.path.join(MIDI_PATH, f"**/{ext}"), recursive=True):
                     if os.path.basename(f) in csv_file_names:
                         self.midi_files.append(f)
-        ##################################################################################
+
+        else:
+            raise ValueError(f"CSV file not found: {csv_file_path}")
 
         self.dataset_name = dataset_name
         self.context_size = context_size
@@ -111,6 +103,8 @@ class DataloaderModule(LightningDataModule):
         self.load_latent = load_latent
         self.load_symb = load_symb
         self.load_emotions = load_emotions
+        self.load_global_features = load_global_features  # Add new parameter
+        self.load_text_prompts = load_text_prompts  # Add new parameter
         self.encode = encode
         self.caption = caption
         self.vocab = RemiVocab()
@@ -132,6 +126,8 @@ class DataloaderModule(LightningDataModule):
             "load_latent": self.load_latent,
             "load_symb": self.load_symb,
             "load_emotions": self.load_emotions,
+            "load_global_features": self.load_global_features,  # Add to parameters dict
+            "load_text_prompts": self.load_text_prompts,  # Add to parameters dict
             "encode": self.encode,
             "caption": self.caption,
         }
@@ -143,19 +139,7 @@ class DataloaderModule(LightningDataModule):
         valid_files = self.midi_files[n_test : n_test + n_valid]
         test_files = self.midi_files[:n_test]
 
-        # predict_files = self.midi_files
-        
-        # TODO: Remove this once we have a way to handle latents
-        # Filter predict_files to only include files that don't have latents
-        predict_files = []
-        for midi_file in self.midi_files:
-            latents_path = os.path.join(
-                str(LATENTS_PATH),
-                self.dataset_name,
-                f"{os.path.basename(midi_file)}_latents.pkl",
-            )
-            if not os.path.exists(latents_path):
-                predict_files.append(midi_file)
+        predict_files = self.midi_files
 
         self.train_ds = DataloaderDataset(train_files, **self.dataset_parameters)
 
@@ -165,7 +149,6 @@ class DataloaderModule(LightningDataModule):
 
         self.predict_ds = DataloaderDataset(predict_files, **self.dataset_parameters)
 
-        # self.train_ds = torchdata.datapipes.iter.Shuffler(self.train_ds, buffer_size=2048)
         self.train_ds = IterableWrapper(self.train_ds)
         self.train_ds.shuffle(buffer_size=2048)
 
@@ -236,6 +219,8 @@ class DataloaderDataset(IterableDataset):
         load_latent,
         load_symb,
         load_emotions,
+        load_global_features=False,
+        load_text_prompts=False,
         encode=False,
         caption=False,
     ):
@@ -256,6 +241,8 @@ class DataloaderDataset(IterableDataset):
         self.load_latent = load_latent
         self.load_symb = load_symb
         self.load_emotions = load_emotions
+        self.load_global_features = load_global_features
+        self.load_text_prompts = load_text_prompts
         self.encode = encode
         self.caption = caption
         self.symb_vocab = SymbolicFeaturesVocab()
@@ -309,15 +296,38 @@ class DataloaderDataset(IterableDataset):
                 # Get emotion vector if needed
                 moods = None
                 if self.load_emotions:
-                    if self.dataset_name == "MIDICaps":
-                        # Load moods from the new CSV file for MIDICaps dataset                        
-                        matching_rows = self.mood_tokens_df[self.mood_tokens_df['file'] == os.path.basename(self.split[i])]
+                    if self.labels_df is not None:
+                        # Use labels_df if it was passed from the DataloaderModule
+                        matching_rows = self.labels_df[self.labels_df["file"] == os.path.basename(self.split[i])]
                         if not matching_rows.empty:
                             # Get the mood tokens from the matching row
-                            moods = matching_rows.iloc[0]['mood_tokens']
-                    elif "moods" in processed_data:
-                        # For other datasets, use the original behavior
-                        moods = processed_data["moods"]
+                            moods = matching_rows.iloc[0]["mood_tokens"]
+                    else:
+                        raise ValueError("Labels DataFrame is not provided")
+
+                # Get global features if needed
+                global_features = None
+                if self.load_global_features and "global_features" in processed_data:
+                    if self.labels_df is not None:
+                        # Use labels_df if it was passed from the DataloaderModule
+                        matching_rows = self.labels_df[self.labels_df["file"] == os.path.basename(self.split[i])]
+                        if not matching_rows.empty:
+                            # Get the global features from the matching row
+                            global_features = matching_rows.iloc[0]["global_features"]
+                    else:
+                        raise ValueError("Labels DataFrame is not provided")
+
+                # Get text prompts if needed
+                text_prompts = None
+                if self.load_text_prompts and "text_prompts" in processed_data:
+                    if self.labels_df is not None:
+                        # Use labels_df if it was passed from the DataloaderModule
+                        matching_rows = self.labels_df[self.labels_df["file"] == os.path.basename(self.split[i])]
+                        if not matching_rows.empty:
+                            # Get the mood tokens from the matching row
+                            text_prompts = matching_rows.iloc[0]["caption"]
+                    else:
+                        raise ValueError("Labels DataFrame is not provided")
 
                 # Get or generate representation
                 file = os.path.basename(self.split[i])
@@ -340,6 +350,13 @@ class DataloaderDataset(IterableDataset):
                     moods,
                     save=False,
                 )
+
+                # Add global features and text prompts to the output
+                if global_features is not None:
+                    x["global_features"] = global_features
+
+                if text_prompts is not None:
+                    x["text_prompts"] = text_prompts
 
             except FileNotFoundError as err:
                 print(err)

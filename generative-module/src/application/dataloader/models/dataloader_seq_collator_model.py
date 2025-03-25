@@ -70,16 +70,30 @@ class SeqCollator:
                 symb_position_ids = pad_sequence(symb_position_ids, batch_first=True, padding_value=0)
                 batch["symb_position_ids"] = symb_position_ids[:, :symb_len]
 
-        if "piece_symbolic" in features[0]:
-            piece_symbolic = [feature["piece_symbolic"] for feature in features]
-            piece_symbolic = pad_sequence(piece_symbolic, batch_first=True, padding_value=self.pad_token)
-            piece_symb = piece_symbolic[:, :max_symb_len]
-            batch["piece_symbolic"] = piece_symb
-
         if "moods" in features[0]:
             moods = [feature["moods"] for feature in features]
             moods = pad_sequence(moods, batch_first=True, padding_value=self.pad_token)
             batch["moods"] = moods
+
+        # Handle global features if present
+        if "global_features" in features[0]:
+            global_features = [feature["global_features"] for feature in features]
+            # Check if they're tensors or need to be converted
+            if not isinstance(global_features[0], torch.Tensor):
+                global_features = [torch.tensor(gf, dtype=torch.float) if not isinstance(gf, torch.Tensor) else gf 
+                                for gf in global_features]
+            # Use pad_sequence only if the global features have sequence dimension
+            if len(global_features[0].shape) > 1:
+                global_features = pad_sequence(global_features, batch_first=True, padding_value=0.0)
+            else:
+                # If they're just feature vectors (no sequence), stack them
+                global_features = torch.stack(global_features)
+            batch["global_features"] = global_features
+
+        # Handle text prompts if present
+        if "text_prompts" in features[0]:
+            # Just collect the text strings, they'll be tokenized later
+            batch["text_prompts"] = [feature["text_prompts"] for feature in features]
 
         if "file" in features[0]:
             batch["files"] = [feature["file"] for feature in features]

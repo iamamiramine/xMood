@@ -1,6 +1,8 @@
 import asyncio
 import os
 import json
+import pandas as pd
+
 
 import torch
 
@@ -36,6 +38,7 @@ from domain.constants.paths_constants import (
     VAE_PATH,
     MIDI_PATH,
     PROCESSED_PATH,
+    LABELS_PATH,
 )
 
 
@@ -70,18 +73,23 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
 
     # Extract features based on level
     if parameters.level == "piece":
-        symbolic_features = get_piece_level_symbolic_features(midi, groups)
+        global_features = get_piece_level_symbolic_features(midi, groups)
+        
+        # For piece-level features, return additional info for CSV saving
+        file_name = os.path.basename(parameters.midi) if isinstance(parameters.midi, str) else os.path.basename(processed_data.get("original_file", "unknown.mid"))
+
+        return {"Message": "Global Features Extracted Successfully", "csv_data": {"file": file_name, "global_features": global_features}}
     else:  # default to bar level
         symbolic_features = get_symbolic_features(midi, groups, add_position_tokens=parameters.add_position_tokens)
+        
+        # Add Symbolic Features to processed data
+        if "symbolic_features" not in processed_data:
+            processed_data["symbolic_features"] = {}
+        processed_data["symbolic_features"] = {f"{parameters.level}_symbolic": symbolic_features}
 
-    # Add Symbolic Features to processed data
-    if "symbolic_features" not in processed_data:
-        processed_data["symbolic_features"] = {}
-    processed_data["symbolic_features"] = {f"{parameters.level}_symbolic": symbolic_features}
-
-    if parameters.save:
         # Save to processed data file
-        save_async(parameters.processed_dir, parameters.midi, processed_data, "processed")
+        if parameters.save:
+            save_async(parameters.processed_dir, parameters.midi, processed_data, "processed")
 
     return {"Message": "Symbolic Features Extracted Successfully"}
 
@@ -89,25 +97,63 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
 async def extract_symbolic_features_dataset(dataset_name: str = "", level: str = "bar", add_position_tokens: bool = False) -> dict:
     dataset_path = MIDI_PATH
     processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
+    
+    # Initialize variables for CSV handling if needed
+    is_piece_level = level == "piece"
+    
+    if is_piece_level:        
+        # CSV file path
+        csv_file_path = os.path.join(LABELS_PATH, f"{dataset_name}.csv")
+        
+        # Initialize or load the CSV file
+        df = pd.read_csv(csv_file_path)
+
 
     async def process_file(file_path: str) -> tuple[bool, str]:
-        try:
-            extract_symbolic_features(
-                SymbolicFeaturesParameters(
-                    midi=file_path,
-                    processed_dir=processed_dir,
-                    save=True,
-                    level=level,
-                    add_position_tokens=add_position_tokens,
-                )
+        result = extract_symbolic_features(
+            SymbolicFeaturesParameters(
+                midi=file_path,
+                processed_dir=processed_dir,
+                save=True,
+                level=level,
+                add_position_tokens=add_position_tokens,
             )
-            return True, ""
-        except Exception as e:
-            return False, f"Error processing {os.path.basename(file_path)}: {str(e)}"
+        )
+        
+        # If it's piece-level, update CSV file immediately
+        if is_piece_level and "csv_data" in result:
+            # Get the data from the result
+            csv_data = result["csv_data"]
+            file_name = csv_data["file"]
+            global_features = csv_data["global_features"]
+            
+            # Update each column individually
+            row_idx = df.index[df['file'] == file_name].tolist()[0]
+            
+            # Add the global_features column if it doesn't exist
+            if 'global_features' not in df.columns:
+                df['global_features'] = None
+            
+            # Format global_features as a space-separated string similar to mood_tokens
+            if isinstance(global_features, list):
+                formatted_features = " ".join(global_features)
+            else:
+                formatted_features = str(global_features)
+            
+            df.at[row_idx, 'global_features'] = formatted_features
+            
+            # Save to CSV file after each update
+            df.to_csv(csv_file_path, index=False)
+            print(f"Updated {dataset_name}.csv for file {file_name} with global features", flush=True)
+        
+        return True, ""
 
     # Create tasks for each file
-    midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
+    all_midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
+    # Filter to only include files that are in the CSV
+    midi_files = [f for f in all_midi_files if f in df['file'].values]
     total_files = len(midi_files)
+    print(f"Total files to process: {total_files}", flush=True)
     processed = 0
     successful = 0
     errors = []

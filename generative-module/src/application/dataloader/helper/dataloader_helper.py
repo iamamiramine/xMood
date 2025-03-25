@@ -99,10 +99,6 @@ def represent_encoding(
             "position_ids": p_ids,
         }
 
-        if piece_symbolic is not None:
-            piece_symbolic_ids = torch.tensor(symb_vocab.encode(piece_symbolic), dtype=torch.int)
-            x["piece_symbolic"] = piece_symbolic_ids
-
         if bar_symbolic is not None:
             min_bar = b_ids[0]
             symb_events = bar_symbolic
@@ -155,7 +151,7 @@ def represent_encoding(
 
         if moods is not None:
             moods_ids = torch.tensor(emotion_vocab.encode(moods), dtype=torch.int)
-            x["moods"] = moods_ids
+            x["moods"] = moods  # moods_ids
 
         if latents is not None:
             x["latents"] = latents

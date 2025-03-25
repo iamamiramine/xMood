@@ -6,8 +6,6 @@ from api.controllers import (
     health_controller,
     feature_extraction_controller,
     generator_controller,
-    emotion_mapper_controller,
-    projection_controller,
 )
 from handlers.exception_handler import add_exception_handlers
 
@@ -27,14 +25,6 @@ tags_metadata = [
     {
         "name": "feature_extraction",
         "description": "Feature Extraction Module",
-    },
-    {
-        "name": "emotion_mapper",
-        "description": "Emotion Mapper",
-    },
-    {
-        "name": "projection",
-        "description": "Projection",
     },
     {
         "name": "generator",
@@ -72,18 +62,6 @@ app.include_router(
     feature_extraction_controller.router,
     prefix="/feature_extraction",
     tags=["feature_extraction"],
-    responses={404: {"description": "Not found"}},
-)
-app.include_router(
-    emotion_mapper_controller.router,
-    prefix="/emotion_mapper",
-    tags=["emotion_mapper"],
-    responses={404: {"description": "Not found"}},
-)
-app.include_router(
-    projection_controller.router,
-    prefix="/projection",
-    tags=["projection"],
     responses={404: {"description": "Not found"}},
 )
 app.include_router(
