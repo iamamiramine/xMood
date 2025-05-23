@@ -1,0 +1,12 @@
+# List of mood categories (for reference only)
+labels: [ "HAPPY_KEY", "DRAMATIC_KEY", "RELAXING_KEY", "LOVE_KEY", "DARK_KEY", 
+         "CHRISTMAS_KEY", "ENERGETIC_KEY", "MEDITATIVE_KEY", "MOTIVATIONAL_KEY" ]
+
+# Set classifier type to MOOD for mood vector classification
+cls_type: "MOOD"
+
+# Number of dimensions for the output (9 moods)
+num_of_dim: 9
+
+# Default labels path (can be overridden via command line)
+labels_path: "./datasets/ReMIDICaps/labels/"

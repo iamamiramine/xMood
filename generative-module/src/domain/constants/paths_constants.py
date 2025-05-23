@@ -2,10 +2,10 @@ import json
 import os
 
 # with open(os.path.join("shared", "assets", "paths_demo.json")) as file:
-with open(os.path.join("shared", "assets", "paths.json")) as file:
+with open(os.path.join("shared", "config", "paths.json")) as file:
     paths = json.load(file)
 
-with open(os.path.join("shared", "assets", "config.json")) as file:
+with open(os.path.join("shared", "config", "config.json")) as file:
     config = json.load(file)
 
 ROOT_OUTPUT = paths["ROOT_OUTPUT"]

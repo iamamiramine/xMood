@@ -6,6 +6,7 @@ from api.controllers import (
     health_controller,
     feature_extraction_controller,
     generator_controller,
+    classifier_controller,
 )
 from handlers.exception_handler import add_exception_handlers
 
@@ -29,6 +30,10 @@ tags_metadata = [
     {
         "name": "generator",
         "description": "Generator",
+    },
+    {
+        "name": "classifier",
+        "description": "MIDI Mood Classification",
     },
 ]
 
@@ -68,6 +73,12 @@ app.include_router(
     generator_controller.router,
     prefix="/generator",
     tags=["generator"],
+    responses={404: {"description": "Not found"}},
+)
+app.include_router(
+    classifier_controller.router,
+    prefix="/classifier",
+    tags=["classifier"],
     responses={404: {"description": "Not found"}},
 )
 

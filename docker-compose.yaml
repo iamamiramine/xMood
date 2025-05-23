@@ -39,6 +39,27 @@ services:
     networks:
       - pa-ai-network
 
+  pa-ai-evaluation:
+    build:
+      context: ./evaluation-module
+      dockerfile: Dockerfile
+    image: pa-ai-evaluation
+    container_name: pa-ai-evaluation-container
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"
+      MKL_SERVICE_FORCE_INTEL: "1"
+      TORCH_USE_CUDA_DSA: "1"
+      CUDA_LAUNCH_BLOCKING: "1"
+    ports:
+      - "8502:80"
+    volumes:
+      - ./datasets:/app/datasets
+      - ./output:/app/output
+      - ./shared:/app/shared
+    runtime: nvidia
+    networks:
+      - pa-ai-network
+
 networks:
   pa-ai-network:
     external: true

@@ -53,3 +53,52 @@ def generate_from_midi(parameters: GenerateFromMIDIParameters) -> dict:
         A dictionary containing the generation status and output path
     """
     return generator_service.generate_from_midi(parameters)
+
+
+@router.post("/batch_generate_from_dataset")
+def batch_generate_from_dataset(dataset_csv_path: str, parameters: GenerateFromMIDIParameters) -> dict:
+    """
+    Description:
+    ------------
+        Generate a new MIDI file using an existing MIDI file as prompt
+
+    Parameters:
+    -----------
+        parameters: GenerateFromMIDIParameters
+            Parameters for MIDI generation including:
+            - midi_path: Path to the source MIDI file
+            - output_folder: Folder name for the generated output
+            - output_name: Name for the generated file
+            - checkpoint_path: Path to the generator checkpoint
+            - context_size: Size of the context window (default: 256)
+            - max_bars: Maximum number of bars to generate (default: 16)
+            - max_positions: Maximum number of positions (default: 512)
+            - max_n_tokens: Maximum number of tokens to generate (default: 1024)
+            - temperature: Sampling temperature (default: 0.8)
+
+    Returns:
+    --------
+    dict
+        A dictionary containing the generation status and output path
+    """
+    return generator_service.batch_generate_from_dataset(dataset_csv_path, parameters)
+
+
+@router.post("/save_checkpoint_separate")
+def save_checkpoint_separate(checkpoint_path: str, output_dir: str) -> dict:
+    """
+    Description:
+    ------------
+        Save the generator model checkpoint and hyperparameters separately
+
+    Parameters:
+    -----------
+        checkpoint_path: Path to the checkpoint file
+        output_dir: Directory to save the separate files
+
+    Returns:
+    --------
+    dict
+        A dictionary containing the status of the operation
+    """
+    return generator_service.save_checkpoint_separate(checkpoint_path, output_dir)

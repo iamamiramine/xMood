@@ -47,3 +47,24 @@ def encode_dataset(config_path: str) -> dict:
     """
     # return encoder_service.encode_dataset(parameters)
     return asyncio.run(encoder_service.encode_dataset(config_path))
+
+
+@router.post("/tokenize_remi_dataset")
+def tokenize_remi_dataset(config_path: str) -> dict:
+    """
+    Description:
+    ------------
+        Tokenize REMI Dataset
+
+    Parameters:
+    -----------
+        config: str
+
+    Returns:
+    --------
+    dict
+        A dictionary
+
+    """
+    # return encoder_service.tokenize_remi_dataset(parameters)
+    return asyncio.run(encoder_service.tokenize_remi_dataset(config_path))
