@@ -2,9 +2,18 @@ import asyncio
 
 from fastapi import APIRouter
 
-from domain.models.feature_extraction.feature_extraction_model import SymbolicFeaturesParameters
-
-from application.feature_extraction.services import feature_extraction_service
+from application.feature_extraction.services.feature_extraction_service import (
+    extract_symbolic_features as _extract_symbolic_features,
+    extract_symbolic_features_dataset as _extract_symbolic_features_dataset,
+    train_vae as _train_vae,
+    generate_latent_representations_dataset as _generate_latent_representations_dataset,
+)
+from domain.models.feature_extraction.feature_extraction_model import (
+    SymbolicFeaturesParameters,
+    SymbolicFeaturesDatasetParameters,
+    VaeTrainingParameters,
+    LatentRepresentationParameters,
+)
 
 router = APIRouter()
 
@@ -12,78 +21,70 @@ router = APIRouter()
 @router.post("/extract_symbolic_features")
 def extract_symbolic_features(parameters: SymbolicFeaturesParameters) -> dict:
     """
-    Description:
-    ------------
-        Extract Symbolic Features for 1 File
-
-    Parameters:
-    -----------
-        parameters: DescriptionParameters
-
+    Extract symbolic features from a single MIDI file.
+    
+    Args:
+        parameters: SymbolicFeaturesParameters containing file path and extraction options
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Extraction result message
     """
-    return feature_extraction_service.extract_symbolic_features(parameters)
+    try:
+        result = _extract_symbolic_features(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/extract_symbolic_features_dataset")
-def extract_symbolic_features_dataset(dataset_name: str, level: str = "bar", add_position_tokens: bool = False) -> dict:
+async def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParameters) -> dict:
     """
-    Description:
-    ------------
-        Extract Symbolic Features for Dataset
-
-    Parameters:
-    -----------
-        dataset_name: str
-
+    Extract symbolic features from an entire dataset of MIDI files.
+    
+    Args:
+        parameters: SymbolicFeaturesDatasetParameters containing dataset configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Extraction result summary
     """
-    return asyncio.run(feature_extraction_service.extract_symbolic_features_dataset(dataset_name, level, add_position_tokens))
+    try:
+        result = await _extract_symbolic_features_dataset(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/train_vae")
-def train_vae(config_path: str) -> dict:
+def train_vae(parameters: VaeTrainingParameters) -> dict:
     """
-    Description:
-    ------------
-        Train VAE
-
-    Parameters:
-    -----------
-        config_path: str
-
+    Train a VAE model for latent representation learning.
+    
+    Args:
+        parameters: VaeTrainingParameters containing training configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Training result message
     """
-    return feature_extraction_service.train_vae(config_path)
+    try:
+        result = _train_vae(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/generate_latent_representations_dataset")
-def generate_latent_representations_dataset(config_path: str) -> dict:
+async def generate_latent_representations_dataset(parameters: LatentRepresentationParameters) -> dict:
     """
-    Description:
-    ------------
-        Generate Latent Representations of a Dataset
-
-    Parameters:
-    -----------
-        config_path: str
-
+    Generate latent representations for an entire dataset using a trained VAE.
+    
+    Args:
+        parameters: LatentRepresentationParameters containing generation configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Generation result summary
     """
-    return feature_extraction_service.generate_latent_representations_dataset(config_path)
+    try:
+        result = await _generate_latent_representations_dataset(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

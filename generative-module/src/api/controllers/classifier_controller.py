@@ -5,6 +5,7 @@ import tempfile
 import shutil
 
 from application.classifier.services import classifier_service
+from application.shared.helpers import enum_helpers
 from domain.models.classifier.classifier_model import (
     PredictMoodParameters,
     BatchPredictParameters,
@@ -63,9 +64,10 @@ def predict_batch(parameters: BatchPredictParameters) -> dict:
     dict
         A dictionary containing prediction results and statistics
     """
-    # Set mood_column to mood_tokens if not specified
-    if not hasattr(parameters, 'mood_column') or not parameters.mood_column:
-        parameters.mood_column = "mood_tokens"
+    # Apply default values for parameters
+    enum_helpers.validate_parameters_defaults(parameters, {
+        'mood_column': 'mood_tokens'
+    })
     
     return classifier_service.predict_batch_sync(parameters)
 

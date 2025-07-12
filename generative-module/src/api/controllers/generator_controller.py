@@ -1,104 +1,85 @@
 from fastapi import APIRouter
 
-from application.generator.services import generator_service
-from domain.models.generator_model import GenerateFromMIDIParameters
+from application.generator.services.generator_service import (
+    train_generator as _train_generator,
+    generate_from_midi as _generate_from_midi,
+    batch_generate_from_dataset as _batch_generate_from_dataset,
+    save_checkpoint_separate as _save_checkpoint_separate,
+)
+from domain.models.generator_model import GenerateFromMIDIParameters, GeneratorTrainingParameters
 
 router = APIRouter()
 
 
 @router.post("/train_generator")
-def train_generator(config_path: str) -> dict:
+def train_generator(parameters: GeneratorTrainingParameters) -> dict:
     """
-    Description:
-    ------------
-        Train Generator
-
-    Parameters:
-    -----------
-        config_path: str
-
+    Train a generator model for MIDI generation.
+    
+    Args:
+        parameters: GeneratorTrainingParameters containing training configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Training result message
     """
-    return generator_service.train_generator(config_path)
+    try:
+        result = _train_generator(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/generate_from_midi")
 def generate_from_midi(parameters: GenerateFromMIDIParameters) -> dict:
     """
-    Description:
-    ------------
-        Generate a new MIDI file using an existing MIDI file as prompt
-
-    Parameters:
-    -----------
-        parameters: GenerateFromMIDIParameters
-            Parameters for MIDI generation including:
-            - midi_path: Path to the source MIDI file
-            - output_folder: Folder name for the generated output
-            - output_name: Name for the generated file
-            - checkpoint_path: Path to the generator checkpoint
-            - context_size: Size of the context window (default: 256)
-            - max_bars: Maximum number of bars to generate (default: 16)
-            - max_positions: Maximum number of positions (default: 512)
-            - max_n_tokens: Maximum number of tokens to generate (default: 1024)
-            - temperature: Sampling temperature (default: 0.8)
-
+    Generate new MIDI sequences from existing MIDI files.
+    
+    Args:
+        parameters: GenerateFromMIDIParameters containing generation configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary containing the generation status and output path
+        dict: Generation result message
     """
-    return generator_service.generate_from_midi(parameters)
+    try:
+        result = _generate_from_midi(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/batch_generate_from_dataset")
 def batch_generate_from_dataset(dataset_csv_path: str, parameters: GenerateFromMIDIParameters) -> dict:
     """
-    Description:
-    ------------
-        Generate a new MIDI file using an existing MIDI file as prompt
-
-    Parameters:
-    -----------
-        parameters: GenerateFromMIDIParameters
-            Parameters for MIDI generation including:
-            - midi_path: Path to the source MIDI file
-            - output_folder: Folder name for the generated output
-            - output_name: Name for the generated file
-            - checkpoint_path: Path to the generator checkpoint
-            - context_size: Size of the context window (default: 256)
-            - max_bars: Maximum number of bars to generate (default: 16)
-            - max_positions: Maximum number of positions (default: 512)
-            - max_n_tokens: Maximum number of tokens to generate (default: 1024)
-            - temperature: Sampling temperature (default: 0.8)
-
+    Generate MIDI sequences for an entire dataset.
+    
+    Args:
+        dataset_csv_path: Path to the dataset CSV file
+        parameters: GenerateFromMIDIParameters containing generation configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary containing the generation status and output path
+        dict: Batch generation result summary
     """
-    return generator_service.batch_generate_from_dataset(dataset_csv_path, parameters)
+    try:
+        result = _batch_generate_from_dataset(dataset_csv_path, parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/save_checkpoint_separate")
 def save_checkpoint_separate(checkpoint_path: str, output_dir: str) -> dict:
     """
-    Description:
-    ------------
-        Save the generator model checkpoint and hyperparameters separately
-
-    Parameters:
-    -----------
+    Save checkpoint components separately for easier deployment.
+    
+    Args:
         checkpoint_path: Path to the checkpoint file
-        output_dir: Directory to save the separate files
-
+        output_dir: Directory to save separated components
+        
     Returns:
-    --------
-    dict
-        A dictionary containing the status of the operation
+        dict: Save operation result message
     """
-    return generator_service.save_checkpoint_separate(checkpoint_path, output_dir)
+    try:
+        result = _save_checkpoint_separate(checkpoint_path, output_dir)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

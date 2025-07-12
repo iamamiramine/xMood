@@ -37,7 +37,7 @@ class TrainingParameters(BaseModel):
     labels_path: Optional[str] = "datasets/ReMIDICaps/labels"
     r: int = 8
     lstm_hidden_dim: int = 64
-    embedding_size: int = 100
+    d_model: int = 100  # Standardized from embedding_size
     batch_size: int = 8
     num_workers: int = 8
     lr: float = 1e-3

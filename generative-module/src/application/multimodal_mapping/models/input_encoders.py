@@ -46,20 +46,20 @@ class StructuredFeatureProcessor(nn.Module):
     Enhanced to better handle tokenized/categorical nature of inputs seen in the dataset.
     """
     
-    def __init__(self, input_dim, output_dim=256, hidden_dim=512, dropout=0.1):
+    def __init__(self, input_dim, output_dim=256, d_model=512, dropout=0.1):
         super(StructuredFeatureProcessor, self).__init__()
         
         # More robust MLP with layer normalization and dropout
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
+            nn.Linear(input_dim, d_model),
+            nn.LayerNorm(d_model),
             nn.Dropout(dropout),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.LayerNorm(hidden_dim // 2),
+            nn.Linear(d_model, d_model // 2),
+            nn.LayerNorm(d_model // 2),
             nn.Dropout(dropout),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, output_dim),
+            nn.Linear(d_model // 2, output_dim),
             nn.LayerNorm(output_dim)
         )
         
@@ -92,11 +92,11 @@ class GlobalFeatureProcessor(StructuredFeatureProcessor):
     - Instruments and chords
     """
     
-    def __init__(self, input_dim, output_dim=256, hidden_dim=512, dropout=0.1):
+    def __init__(self, input_dim, output_dim=256, d_model=512, dropout=0.1):
         super(GlobalFeatureProcessor, self).__init__(
             input_dim=input_dim, 
             output_dim=output_dim, 
-            hidden_dim=hidden_dim,
+            d_model=d_model,
             dropout=dropout
         )
 
@@ -110,10 +110,10 @@ class MoodProcessor(StructuredFeatureProcessor):
     "Mood_Relaxing_0.2844 Mood_Christmas_0.2736 Mood_Dramatic_0.2423 Mood_Meditative_0.1997"
     """
     
-    def __init__(self, input_dim, output_dim=256, hidden_dim=512, dropout=0.1):
+    def __init__(self, input_dim, output_dim=256, d_model=512, dropout=0.1):
         super(MoodProcessor, self).__init__(
             input_dim=input_dim, 
             output_dim=output_dim, 
-            hidden_dim=hidden_dim,
+            d_model=d_model,
             dropout=dropout
         ) 

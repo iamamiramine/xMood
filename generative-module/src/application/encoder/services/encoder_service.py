@@ -11,14 +11,14 @@ import torch
 from application.encoder.helpers.remi_helper import get_remi_events
 from domain.models.encoder.encoder_model import (
     EncodeParameters,
+    EncodeDatasetParameters,
+    TokenizeRemiDatasetParameters,
 )
 from application.music_base.services.music_base_service import (
     extract_chords,
-    estimate_tonal_plan,
 )
 from application.encoder.models.item_model import Item
 from domain.models.music_base.music_base_model import (
-    TonalPlanParameters,
     MusicBaseParameters,
 )
 from application.encoder.helpers.encoder_helper import (
@@ -127,93 +127,41 @@ def encode_midi(parameters: EncodeParameters) -> dict:
 
         processed_data["chords"] = {"chords": chords["chords"], "remi_chords": remi_chords, "expanded_chords": chords["expanded_chords"]}
 
-    if "keys" not in processed_data:
-        if parameters.use_algorithm:
-            # Use the key detection algorithm
-            keys = estimate_tonal_plan(
-                TonalPlanParameters(
-                    midi=parameters.midi,
-                    alpha=parameters.alpha,
-                    beta=parameters.beta,
-                    gamma=parameters.gamma,
-                    c=parameters.c,
-                    w=parameters.w,
-                    save=False,
-                    chords=processed_data["chords"],
-                ),
-            )
-
-            # Generate REMI keys
-            remi_keys = []
-            for i in range(1, len(beats), 1):
-                remi_keys.append(
-                    Item(
-                        name="Key",
-                        start=midi.time_to_tick(beats[i - 1]),
-                        end=midi.time_to_tick(beats[i]),
-                        velocity=None,
-                        pitch=f"{keys['keys'][i-1][0]}:{keys['keys'][i-1][1]}",
-                    )
-                )
-        elif parameters.use_music21:
-            # Use music21's key detection
-            if isinstance(midi, str):
-                midi_file = music21.converter.parse(midi)
-            else:
-                # Extract filename from the MIDI path or generate a unique name
-                if hasattr(midi, "filename"):
-                    filename = os.path.basename(midi.filename)
-                    base_filename = os.path.splitext(filename)[0]
-                else:
-                    # If no filename available, use a timestamp
-                    base_filename = str(int(time.time() * 1000))
-
-                # Create temporary file with unique name
-                temp_path = f"temp_midi_{base_filename}.mid"
-                midi.write(temp_path)
-                midi_file = music21.converter.parse(temp_path)
-                os.remove(temp_path)
-
-            # Analyze the key using music21
-            key_analysis = midi_file.analyze("key")
-            mode = "maj" if key_analysis.mode == "major" else "min"
-            remi_key = f"{key_analysis.tonic.name}:{mode}"
-
-            # Create key items for each beat
-            remi_keys = []
-            for i in range(1, len(beats), 1):
-                remi_keys.append(
-                    Item(
-                        name="Key",
-                        start=midi.time_to_tick(beats[i - 1]),
-                        end=midi.time_to_tick(beats[i]),
-                        velocity=None,
-                        pitch=remi_key,
-                    )
-                )
+    # Use music21's key detection
+    if isinstance(midi, str):
+        midi_file = music21.converter.parse(midi)
+    else:
+        # Extract filename from the MIDI path or generate a unique name
+        if hasattr(midi, "filename"):
+            filename = os.path.basename(midi.filename)
+            base_filename = os.path.splitext(filename)[0]
         else:
-            # Use the key from the dataset
-            if not parameters.dataset_key:
-                raise ValueError("dataset_key must be provided when use_algorithm and use_music21 are False")
+            # If no filename available, use a timestamp
+            base_filename = str(int(time.time() * 1000))
 
-            # Convert dataset key format to REMI format
-            remi_key = convert_dataset_key(parameters.dataset_key)
+        # Create temporary file with unique name
+        temp_path = f"temp_midi_{base_filename}.mid"
+        midi.write(temp_path)
+        midi_file = music21.converter.parse(temp_path)
+        os.remove(temp_path)
 
-            remi_keys = []
-            for i in range(1, len(beats), 1):
-                remi_keys.append(
-                    Item(
-                        name="Key",
-                        start=midi.time_to_tick(beats[i - 1]),
-                        end=midi.time_to_tick(beats[i]),
-                        velocity=None,
-                        pitch=remi_key,
-                    )
-                )
+    # Analyze the key using music21
+    key_analysis = midi_file.analyze("key")
+    mode = "maj" if key_analysis.mode == "major" else "min"
+    remi_key = f"{key_analysis.tonic.name}:{mode}"
 
-            # # Create a single key that spans the entire piece
-            # end_tick = midi.time_to_tick(midi.get_end_time())
-            # remi_keys = [Item(name="Key", start=0, end=end_tick, velocity=None, pitch=remi_key)]
+    # Create key items for each beat
+    remi_keys = []
+    for i in range(1, len(beats), 1):
+        remi_keys.append(
+            Item(
+                name="Key",
+                start=midi.time_to_tick(beats[i - 1]),
+                end=midi.time_to_tick(beats[i]),
+                velocity=None,
+                pitch=remi_key,
+            )
+        )
 
         processed_data["keys"] = {"keys": [], "remi_keys": remi_keys}
 
@@ -240,82 +188,91 @@ def encode_midi(parameters: EncodeParameters) -> dict:
     return {"Message": "Midi Encoded Successfully"}
 
 
-async def encode_dataset(config_path: str) -> dict:
+async def encode_dataset(parameters: EncodeDatasetParameters) -> dict:
     """
-    Encode a dataset of MIDI files using parameters from the config file.
+    Encode a dataset of MIDI files using BaseModel parameters.
 
     Args:
-        config_path: Path to the configuration file
+        parameters: EncodeDatasetParameters containing all configuration
     """
-    # Load configuration
-    with open(config_path, "r") as f:
-        config = json.load(f)
+    
+    # Set up paths
+    dataset_path = MIDI_PATH
+    processed_dir = os.path.join(PROCESSED_PATH, parameters.dataset_name)
+    if parameters.encodings_out_dir:
+        processed_dir = parameters.encodings_out_dir
 
-    encoder_config = config.get("encoder", {})
-    dataset_name = config.get("dataloader", {}).get("dataset_name")
+    # Create output directory if it doesn't exist
+    os.makedirs(processed_dir, exist_ok=True)
 
-    if not dataset_name:
-        raise ValueError("dataset_name must be provided in the dataloader config")
-
-    # dataset_path = MIDI_PATH
-    dataset_path = "output/demos/demo_2/generated/ReMIDICaps_test_set"
-    processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
-
-    # Load dataset CSV file
-    # dataset_csv = os.path.join(LABELS_PATH, "MIDICaps.csv")
-    dataset_csv = "output/demos/demo_2/generated/ReMIDICaps_test_set_out.csv"
-    if not os.path.exists(dataset_csv):
-        raise ValueError(f"Dataset CSV file not found: {dataset_csv}")
-
-    df = pd.read_csv(dataset_csv)
-    # Create a mapping of filename to key
-    # key_map = dict(zip(df["file"].apply(lambda x: os.path.basename(x)), df.get("key")))
+    # Load dataset CSV file if available
+    dataset_csv = os.path.join(LABELS_PATH, f"{parameters.dataset_name}.csv")
+    key_map = {}
+    if os.path.exists(dataset_csv):
+        df = pd.read_csv(dataset_csv)
+        # Create a mapping of filename to key if key column exists
+        if "key" in df.columns:
+            key_map = dict(zip(df["file"].apply(lambda x: os.path.basename(x)), df.get("key")))
 
     async def process_file(file_path: str) -> tuple[bool, str]:
         try:
             # Test if MIDI file can be loaded
             pm.PrettyMIDI(file_path)
 
-            # Get the key from the dataset
+            # Check if already processed and not overwriting
             filename = os.path.basename(file_path)
-            # dataset_key = key_map.get(filename)
-            # if not dataset_key:
-            #     raise ValueError(f"Key not found in dataset for file: {filename}")
-            dataset_key = None
+            processed_file = os.path.join(processed_dir, f"{filename}_processed.pkl")
+            if os.path.exists(processed_file) and not parameters.overwrite_existing:
+                return True, f"Skipped {filename} (already exists)"
+
+            # Get the key from the dataset if available
+            dataset_key = key_map.get(filename) if key_map else None
 
             encode_midi(
                 EncodeParameters(
                     midi=file_path,
-                    alpha=encoder_config.get("alpha", 0.016),
-                    beta=encoder_config.get("beta", 0.3),
-                    gamma=encoder_config.get("gamma", 0.4),
-                    c=encoder_config.get("c", 12),
-                    w=encoder_config.get("w", 4),
-                    save=True,
+                    alpha=parameters.alpha,
+                    beta=parameters.beta,
+                    gamma=parameters.gamma,
+                    c=parameters.c,
+                    w=parameters.w,
+                    save=parameters.save,
                     encodings_out_dir=processed_dir,
-                    use_algorithm=False,
-                    use_music21=True,
                     dataset_key=dataset_key,
                 ),
             )
             return True, ""
         except Exception as e:
-            # Move file to dump directory
             filename = os.path.basename(file_path)
-            print("Error processing", filename, str(e), flush=True)
-            return False, f"Error processing {filename}: {str(e)}"
+            if parameters.skip_invalid:
+                print(f"Skipping invalid file {filename}: {str(e)}", flush=True)
+                return False, f"Skipped invalid file {filename}: {str(e)}"
+            else:
+                return False, f"Error processing {filename}: {str(e)}"
 
-    # Create tasks for each file
+    # Get MIDI files from the dataset path
     midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
+    
+    # Limit files if specified
+    if parameters.max_files:
+        midi_files = midi_files[:parameters.max_files]
+    
+    # Resume from specific file if specified
+    if parameters.resume_from:
+        try:
+            start_index = midi_files.index(parameters.resume_from)
+            midi_files = midi_files[start_index:]
+        except ValueError:
+            print(f"Warning: Resume file {parameters.resume_from} not found, starting from beginning")
+
     total_files = len(midi_files)
     processed = 0
     successful = 0
     errors = []
 
-    # Process files in batches using batch size from config
-    batch_size = encoder_config.get("batch_size", 10)
+    # Process files in batches
     while processed < total_files:
-        batch = midi_files[processed : processed + batch_size]
+        batch = midi_files[processed : processed + parameters.batch_size]
         batch_tasks = [process_file(os.path.join(dataset_path, file)) for file in batch]
 
         # Process batch
@@ -330,62 +287,66 @@ async def encode_dataset(config_path: str) -> dict:
 
         processed += len(batch)
 
-    # Prepare summary message
-    summary = f"Dataset Encoding Complete\n" f"Total files: {total_files}\n" f"Successfully processed: {successful}\n" f"Failed: {len(errors)}\n"
-    if errors:
-        summary += "\nErrors:\n" + "\n".join(errors)
-
-    return {"Message": summary}
+    return {"Message": "Successfully encoded dataset"}
 
 
-async def tokenize_remi_dataset(config_path: str) -> dict:
+async def tokenize_remi_dataset(parameters: TokenizeRemiDatasetParameters) -> dict:
     """
     Tokenize the encoded REMI sequences and save them as PyTorch tensors.
 
     Args:
-        config_path (str): Path to the configuration file
+        parameters: TokenizeRemiDatasetParameters containing all configuration
 
     Returns:
         dict: Summary of the tokenization process
     """
-    # Load configuration
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    encoder_config = config.get("encoder", {})
-    dataset_name = config.get("dataloader", {}).get("dataset_name")
-
-    if not dataset_name:
-        raise ValueError("dataset_name must be provided in the dataloader config")
-
+    
     # Set up paths
     dataset_path = MIDI_PATH
-    processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
-    remi_path = os.path.join(PROCESSED_PATH, f"{dataset_name}_tokenized")
+    processed_dir = os.path.join(PROCESSED_PATH, parameters.dataset_name)
+    remi_path = os.path.join(PROCESSED_PATH, f"{parameters.dataset_name}_tokenized")
+    if parameters.tokens_out_dir:
+        remi_path = parameters.tokens_out_dir
 
     # Create the output directory if it doesn't exist
     os.makedirs(remi_path, exist_ok=True)
 
     # Load dataset CSV file
-    dataset_csv = os.path.join(LABELS_PATH, f"{dataset_name}.csv")
+    dataset_csv = os.path.join(LABELS_PATH, f"{parameters.dataset_name}.csv")
     if not os.path.exists(dataset_csv):
-        raise ValueError(f"Dataset CSV file not found: {dataset_csv}")
+        print(f"Warning: Dataset CSV file not found: {dataset_csv}. Processing all MIDI files in directory.")
+        midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
+    else:
+        df = pd.read_csv(dataset_csv)
+        # ONLY get the MIDI files listed in the CSV file
+        csv_midi_files = [os.path.basename(file) for file in df["file"]]
+        # Filter to only include files that exist in the dataset directory
+        existing_midi_files = set(os.listdir(dataset_path))
+        midi_files = [file for file in csv_midi_files if file in existing_midi_files]
 
-    df = pd.read_csv(dataset_csv)
+    if not midi_files:
+        return {"Message": "No MIDI files found for tokenization"}
 
     # Initialize vocabulary for tokenization
     vocab = RemiVocab()
+    
+    # Load custom vocabulary if specified
+    if parameters.vocab_path and os.path.exists(parameters.vocab_path):
+        import pickle
+        with open(parameters.vocab_path, 'rb') as f:
+            vocab = pickle.load(f)
 
-    # ONLY get the MIDI files listed in the CSV file
-    csv_midi_files = [os.path.basename(file) for file in df["file"]]
-    # Filter to only include files that exist in the dataset directory
-    existing_midi_files = set(os.listdir(dataset_path))
-    midi_files = [file for file in csv_midi_files if file in existing_midi_files]
-
-    if not midi_files:
-        return {"Message": "No MIDI files from the CSV found in the dataset directory"}
-
-    print(f"Found {len(midi_files)} MIDI files from the CSV in the dataset directory", flush=True)
+    # Limit files if specified
+    if parameters.max_files:
+        midi_files = midi_files[:parameters.max_files]
+    
+    # Resume from specific file if specified
+    if parameters.resume_from:
+        try:
+            start_index = midi_files.index(parameters.resume_from)
+            midi_files = midi_files[start_index:]
+        except ValueError:
+            print(f"Warning: Resume file {parameters.resume_from} not found, starting from beginning")
 
     total_files = len(midi_files)
     processed = 0
@@ -396,12 +357,16 @@ async def tokenize_remi_dataset(config_path: str) -> dict:
         try:
             # Get the filename
             midi_file = os.path.basename(file_path)
+            
+            # Check if already processed and not overwriting
+            remi_fn = os.path.join(remi_path, midi_file).replace(".mid", ".pt")
+            if os.path.exists(remi_fn) and not parameters.overwrite_existing:
+                return True, f"Skipped {midi_file} (already exists)"
 
             # Load processed data
             try:
                 processed_data = async_load(processed_dir, midi_file, "processed")
             except Exception as e:
-                print("KES KES KES KES KES", flush=True)
                 return False, f"Could not load processed data for {midi_file}: {str(e)}"
 
             # Check if the file has been encoded
@@ -411,11 +376,12 @@ async def tokenize_remi_dataset(config_path: str) -> dict:
             # Get the REMI events
             events = processed_data["encodings"]["events"]
 
+            # Apply context size if specified
+            if parameters.context_size > 0:
+                events = events[:parameters.context_size]
+
             # Convert string tokens to integers using the vocabulary
             token_ids = torch.tensor(vocab.encode(events), dtype=torch.long)
-
-            # Create output filename
-            remi_fn = os.path.join(remi_path, midi_file).replace(".mid", ".pt")
 
             # Save as PyTorch tensor
             torch.save(token_ids, remi_fn)
@@ -423,12 +389,14 @@ async def tokenize_remi_dataset(config_path: str) -> dict:
             return True, ""
         except Exception as e:
             filename = os.path.basename(file_path)
-            return False, f"Error processing {filename}: {str(e)}"
+            if parameters.skip_invalid:
+                return False, f"Skipped invalid file {filename}: {str(e)}"
+            else:
+                return False, f"Error processing {filename}: {str(e)}"
 
-    # Process files in batches using batch size from config
-    batch_size = encoder_config.get("batch_size", 10)
+    # Process files in batches
     while processed < total_files:
-        batch = midi_files[processed : processed + batch_size]
+        batch = midi_files[processed : processed + parameters.batch_size]
         batch_tasks = [process_file(os.path.join(dataset_path, file)) for file in batch]
 
         # Process batch
@@ -442,13 +410,5 @@ async def tokenize_remi_dataset(config_path: str) -> dict:
                 errors.append(error_msg)
 
         processed += len(batch)
-        # print(f"Processed {processed}/{total_files} files", flush=True)
 
-    # Prepare summary message
-    summary = f"REMI Tokenization Complete\n" f"Total files: {total_files}\n" f"Successfully processed: {successful}\n" f"Failed: {len(errors)}\n"
-    if errors:
-        summary += "\nErrors:\n" + "\n".join(errors[:10])
-        if len(errors) > 10:
-            summary += f"\n... and {len(errors) - 10} more errors"
-
-    return {"Message": summary}
+    return {"Message": "Successfully tokenized REMI dataset"}

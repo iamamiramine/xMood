@@ -13,37 +13,26 @@ from miditoolkit.midi.containers import Marker, Instrument, TempoChange
 import collections
 from chorder import Dechorder
 
+from domain.constants.classifier_constants import MidiProcessingConstants
+
 
 # ================================================== #
 #  Configuration                                     #
 # ================================================== #
-BEAT_RESOL = 480
-BAR_RESOL = BEAT_RESOL * 4
-TICK_RESOL = BEAT_RESOL // 4
-INSTR_NAME_MAP = {"piano": 0}
-MIN_BPM = 40
-MIN_VELOCITY = 40
-NOTE_SORTING = 1  #  0: ascending / 1: descending
+BEAT_RESOL = MidiProcessingConstants.BEAT_RESOL
+BAR_RESOL = MidiProcessingConstants.BAR_RESOL
+TICK_RESOL = MidiProcessingConstants.TICK_RESOL
+INSTR_NAME_MAP = MidiProcessingConstants.INSTR_NAME_MAP
+MIN_BPM = MidiProcessingConstants.MIN_BPM
+MIN_VELOCITY = MidiProcessingConstants.MIN_VELOCITY
+NOTE_SORTING = MidiProcessingConstants.NOTE_SORTING
 
-DEFAULT_VELOCITY_BINS = np.linspace(0, 128, 64 + 1, dtype=np.int32)
-DEFAULT_BPM_BINS = np.linspace(32, 224, 64 + 1, dtype=np.int32)
-DEFAULT_SHIFT_BINS = np.linspace(-60, 60, 60 + 1, dtype=np.int32)
-DEFAULT_DURATION_BINS = np.arange(BEAT_RESOL / 8, BEAT_RESOL * 8 + 1, BEAT_RESOL / 8)
+DEFAULT_VELOCITY_BINS = MidiProcessingConstants.DEFAULT_VELOCITY_BINS
+DEFAULT_BPM_BINS = MidiProcessingConstants.DEFAULT_BPM_BINS
+DEFAULT_SHIFT_BINS = MidiProcessingConstants.DEFAULT_SHIFT_BINS
+DEFAULT_DURATION_BINS = MidiProcessingConstants.get_default_duration_bins()
 
-num2pitch = {
-    0: "C",
-    1: "C#",
-    2: "D",
-    3: "D#",
-    4: "E",
-    5: "F",
-    6: "F#",
-    7: "G",
-    8: "G#",
-    9: "A",
-    10: "A#",
-    11: "B",
-}
+num2pitch = MidiProcessingConstants.NUM2PITCH
 
 
 def traverse_dir(root_dir, extension=("mid", "MID", "midi"), amount=None, str_=None, is_pure=False, verbose=False, is_sort=False, is_ext=True):

@@ -5,15 +5,18 @@ import torch.optim as optim
 import random
 
 from application.multimodal_mapping.models.input_encoders import TextEncoder, GlobalFeatureProcessor, MoodProcessor
+from application.multimodal_mapping.models.image_encoder import ImageEncoder
 from application.multimodal_mapping.models.embedding_fusion import CrossAttentionFusion, LinearConcatFusion
 from application.multimodal_mapping.helpers.multimodal_mapping_helper import initialize_tokenizers_and_processors
 from application.encoder.models.vocab_model import SymbolicFeaturesVocab
+from domain.constants.model_constants import ModelConstants
 
 
 class MultimodalMappingModule(LightningModule):
     def __init__(
         self,
         # Input dimensions
+        image_dim=384,
         text_dim=384,
         global_feature_dim=64,
         global_feature_out_dim=128,
@@ -22,7 +25,7 @@ class MultimodalMappingModule(LightningModule):
         
         # Architecture parameters
         fusion_dim=512,
-        hidden_dim=512,
+        d_model=512,
         latent_dim=128,
         output_dim=256,
         context_size=512,
@@ -34,6 +37,7 @@ class MultimodalMappingModule(LightningModule):
         training=True,
         
         # Modality dropout rates
+        image_dropout_rate=0.2,
         text_dropout_rate=0.2,
         global_feature_dropout_rate=0.2,
         mood_dropout_rate=0.2,
@@ -57,13 +61,14 @@ class MultimodalMappingModule(LightningModule):
         self.save_hyperparameters()
         
         # Architecture parameters
+        self.image_dim = image_dim
         self.text_dim = text_dim
         self.global_feature_dim = global_feature_dim
         self.global_feature_out_dim = global_feature_out_dim
         self.mood_dim = mood_dim
         self.mood_out_dim = mood_out_dim
         self.fusion_dim = fusion_dim
-        self.hidden_dim = hidden_dim
+        self.d_model = d_model
         self.latent_dim = latent_dim
         self.output_dim = output_dim
         self.context_size = context_size
@@ -75,6 +80,7 @@ class MultimodalMappingModule(LightningModule):
         self.training = training
         
         # Modality dropout rates
+        self.image_dropout_rate = image_dropout_rate
         self.text_dropout_rate = text_dropout_rate
         self.global_feature_dropout_rate = global_feature_dropout_rate
         self.mood_dropout_rate = mood_dropout_rate
@@ -93,25 +99,27 @@ class MultimodalMappingModule(LightningModule):
         self.kl_weight = kl_start
         
         # Learnable default embeddings for missing modalities
+        self.default_image_embedding = nn.Parameter(torch.randn(image_dim))
         self.default_text_embedding = nn.Parameter(torch.randn(text_dim))
         self.default_global_embedding = nn.Parameter(torch.randn(global_feature_out_dim))
         self.default_mood_embedding = nn.Parameter(torch.randn(mood_out_dim))
 
         # Input encoders
+        self.image_encoder = ImageEncoder(output_dim=image_dim)
         self.text_encoder = TextEncoder(output_dim=text_dim)
 
         # Create specialized processors for global features and moods
         self.global_feature_processor = GlobalFeatureProcessor(
             input_dim=global_feature_dim, 
             output_dim=global_feature_out_dim, 
-            hidden_dim=hidden_dim, 
+            d_model=d_model, 
             dropout=dropout
         )
 
         self.mood_processor = MoodProcessor(
             input_dim=mood_dim, 
             output_dim=mood_out_dim, 
-            hidden_dim=hidden_dim, 
+            d_model=d_model, 
             dropout=dropout
         )
 
@@ -123,31 +131,32 @@ class MultimodalMappingModule(LightningModule):
             )
         else:
             self.fusion_module = LinearConcatFusion(
-                input_dims=[text_dim, global_feature_out_dim, mood_out_dim], 
+                input_dims=[image_dim, text_dim, global_feature_out_dim, mood_out_dim], 
                 output_dim=fusion_dim
             )
 
         # TO BE IMPLEMENTED: VAE model
         self.vae = TransformerVAE(
             input_dim=fusion_dim,
-            hidden_dim=hidden_dim,
+            d_model=d_model,
             latent_dim=latent_dim,
             output_symbolic_dim=len(SymbolicFeaturesVocab()),
-            output_vqvae_dim=d_latent,  # Use config parameter directly  
+            output_vqvae_dim=ModelConstants.DEFAULT_D_LATENT,  # Use consistent default from constants
             num_layers=num_layers,
             num_heads=num_heads,
             dropout=dropout
         )
 
         # Initialize tokenizer for text prompts
-        self.tokenizer = initialize_tokenizers_and_processors()[0]  # Get only the text tokenizer
+        self.tokenizer, self.image_processor = initialize_tokenizers_and_processors()
 
-    def _apply_modality_dropout(self, has_text, has_global, has_mood):
+    def _apply_modality_dropout(self, has_image, has_text, has_global, has_mood):
         """
         Apply modality dropout during training to help the model learn
         to handle missing modalities.
         
         Args:
+            has_image: Whether image modality is available
             has_text: Whether text modality is available
             has_global: Whether global feature modality is available
             has_mood: Whether mood modality is available
@@ -157,48 +166,60 @@ class MultimodalMappingModule(LightningModule):
         """
         if not self.training:
             # During inference, use whatever is available
-            return has_text, has_global, has_mood
+            return has_image, has_text, has_global, has_mood
             
         # During training, randomly drop modalities
+        use_image = has_image and (random.random() > self.image_dropout_rate)
         use_text = has_text and (random.random() > self.text_dropout_rate)
         use_global = has_global and (random.random() > self.global_feature_dropout_rate)
         use_mood = has_mood and (random.random() > self.mood_dropout_rate)
         
         # Ensure at least one modality is used
-        if not (use_text or use_global or use_mood):
+        if not (use_image or use_text or use_global or use_mood):
             # If all would be dropped, keep one randomly
-            modality_idx = random.randint(0, 2)
-            if modality_idx == 0 and has_text:
+            modality_idx = random.randint(0, 3)
+            if modality_idx == 0 and has_image:
+                use_image = True
+            elif modality_idx == 1 and has_text:
                 use_text = True
-            elif modality_idx == 1 and has_global:
+            elif modality_idx == 2 and has_global:
                 use_global = True
             elif has_mood:
                 use_mood = True
             else:
                 # If nothing is available, use whatever is available
+                use_image = has_image
                 use_text = has_text
                 use_global = has_global
                 use_mood = has_mood
                 
-        return use_text, use_global, use_mood
+        return use_image, use_text, use_global, use_mood
 
     def forward(self, batch):
         # Determine which modalities are available in the batch
+        has_image = "images" in batch
         has_text = "text_prompts" in batch
         has_global = "global_features" in batch
         has_mood = "moods" in batch
         
         # Apply modality dropout during training
-        use_text, use_global, use_mood = self._apply_modality_dropout(has_text, has_global, has_mood)
+        use_image, use_text, use_global, use_mood = self._apply_modality_dropout(has_image, has_text, has_global, has_mood)
         
         # Initialize embeddings
         batch_size = next(iter(batch.values())).shape[0]
         device = next(iter(batch.values())).device
         
+        # Process image input if available and selected
+        if use_image and has_image:
+            image_embedding = self.image_encoder(batch["images"])
+        else:
+            # Use default embedding expanded to batch size
+            image_embedding = self.default_image_embedding.unsqueeze(0).expand(batch_size, -1).to(device)
+
         # Process text input if available and selected
         if use_text and has_text:
             # Tokenize text prompts
-            encoded_text = self.tokenizer(batch["text_prompts"], padding="max_length", truncation=True, max_length=77, return_tensors="pt").to(device)
+            encoded_text = self.tokenizer(batch["text_prompts"], padding="max_length", truncation=True, max_length=ModelConstants.MAX_TEXT_LENGTH, return_tensors="pt").to(device)
             text_embedding = self.text_encoder(input_ids=encoded_text["input_ids"], attention_mask=encoded_text["attention_mask"])
         else:
             # Use default embedding expanded to batch size
@@ -222,6 +243,7 @@ class MultimodalMappingModule(LightningModule):
 
         # Prepare embeddings and their availability flags for fusion
         embeddings = {
+            "image": {"embedding": image_embedding, "available": use_image and has_image},
             "text": {"embedding": text_embedding, "available": use_text and has_text},
             "global": {"embedding": global_embedding, "available": use_global and has_global},
             "mood": {"embedding": mood_embedding, "available": use_mood and has_mood}
@@ -236,7 +258,7 @@ class MultimodalMappingModule(LightningModule):
             
             if not available_embeddings:
                 # If no embeddings are available, use all defaults
-                available_embeddings = [text_embedding, global_embedding, mood_embedding]
+                available_embeddings = [image_embedding, text_embedding, global_embedding, mood_embedding]
             
             # Use the first available embedding as query, rest as key-value
             query_embed = available_embeddings[0]
@@ -245,7 +267,7 @@ class MultimodalMappingModule(LightningModule):
             fused_embedding = self.fusion_module(query_embed=query_embed, key_value_embeds=key_value_embeds)
         else:  # LinearConcatFusion
             # For linear concat, we use all embeddings (including defaults for missing ones)
-            fused_embedding = self.fusion_module(text_embedding, global_embedding, mood_embedding)
+            fused_embedding = self.fusion_module(image_embedding, text_embedding, global_embedding, mood_embedding)
 
         # Convert fused embedding to correct shape for transformer [seq_len, batch_size, input_dim]
         # For now, we create a sequence of length 1 by adding a dimension
@@ -413,7 +435,7 @@ class TransformerVAE(nn.Module):
     def __init__(
         self,
         input_dim=512,
-        hidden_dim=512,
+        d_model=512,
         latent_dim=128,
         output_symbolic_dim=1024,
         output_vqvae_dim=1024,
@@ -425,7 +447,7 @@ class TransformerVAE(nn.Module):
         
         # Save dimensions
         self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
+        self.d_model = d_model
         self.latent_dim = latent_dim
         self.output_symbolic_dim = output_symbolic_dim
         self.output_vqvae_dim = output_vqvae_dim
@@ -434,7 +456,7 @@ class TransformerVAE(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=input_dim,
             nhead=num_heads,
-            dim_feedforward=hidden_dim,
+            dim_feedforward=d_model,
             dropout=dropout,
             batch_first=True
         )
@@ -454,7 +476,7 @@ class TransformerVAE(nn.Module):
         symbolic_decoder_layer = nn.TransformerDecoderLayer(
             d_model=input_dim,
             nhead=num_heads,
-            dim_feedforward=hidden_dim,
+            dim_feedforward=d_model,
             dropout=dropout,
             batch_first=True
         )
@@ -468,7 +490,7 @@ class TransformerVAE(nn.Module):
         vqvae_decoder_layer = nn.TransformerDecoderLayer(
             d_model=input_dim,
             nhead=num_heads,
-            dim_feedforward=hidden_dim,
+            dim_feedforward=d_model,
             dropout=dropout,
             batch_first=True
         )

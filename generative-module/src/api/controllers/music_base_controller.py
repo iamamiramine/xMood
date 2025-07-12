@@ -3,7 +3,6 @@ from typing import Any
 from fastapi import APIRouter
 
 from domain.models.music_base.music_base_model import (
-    TonalPlanParameters,
     MusicBaseParameters,
 )
 from application.music_base.services import music_base_service
@@ -50,22 +49,3 @@ def extract_chords(parameters: MusicBaseParameters) -> Any:
     """
     return music_base_service.extract_chords(parameters)
 
-
-@router.post("/estimate_tonal_plan")
-def estimate_tonal_plan(parameters: TonalPlanParameters) -> Any:
-    """
-    Description:
-    ------------
-        Encode MIDI
-
-    Parameters:
-    -----------
-        chords: str = "path/to/chords.pkl",
-
-    Returns:
-    --------
-    dict
-        A dictionary
-
-    """
-    return music_base_service.estimate_tonal_plan(parameters)

@@ -4,17 +4,20 @@ import json
 import glob
 import tempfile
 import shutil
+import asyncio
+from typing import Dict, Any, Union
 
 import pandas as pd
 from tqdm import tqdm
 import copy
 
 import torch
+import torch.multiprocessing
 from application.dataloader.helper.dataloader_helper import represent_encoding
 from application.encoder.helpers.remi_helper import remi2midi
 
 from application.generator.models.generator_model import MIDIGeneratorModule
-from domain.models.generator_model import GenerateFromMIDIParameters
+from domain.models.generator_model import GenerateFromMIDIParameters, GeneratorTrainingParameters
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, Callback
@@ -32,8 +35,10 @@ from domain.constants.paths_constants import (
     GENERATED_PATH,
     PROCESSED_PATH,
     LATENTS_PATH,
+    MIDI_PATH,
 )
-from persistence.dataloader.repositories.dataloader_repository import async_load, CPU_Unpickler
+from domain.constants.model_constants import ModelConstants
+from persistence.dataloader.repositories.dataloader_repository import async_load, CPU_Unpickler, save_async
 
 
 class WeightsOnlyCheckpoint(ModelCheckpoint):
@@ -69,87 +74,98 @@ class WeightsOnlyCheckpoint(ModelCheckpoint):
         torch.save(checkpoint_marker, filepath)
 
 
-def train_generator(config_path: str) -> dict:
-    """Train a generator model using parameters from the config file."""
+def train_generator(parameters: GeneratorTrainingParameters) -> dict:
+    """Train a generator model using BaseModel parameters."""
     torch.multiprocessing.set_start_method("spawn")
 
-    # Load configuration
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    generator_config = config.get("generator", {})
-    datamodule_parameters = config["dataloader"]
-    datamodule_parameters["encode"] = False
-
-    # Convert train_val_test_split from list to tuple if needed
-    if isinstance(datamodule_parameters["train_val_test_split"], list):
-        datamodule_parameters["train_val_test_split"] = tuple(datamodule_parameters["train_val_test_split"])
+    # Set up data module parameters
+    datamodule_parameters = {
+        "dataset_name": parameters.dataset_name,
+        "context_size": parameters.context_size,
+        "max_positions": parameters.max_positions,
+        "max_bars": parameters.max_bars,
+        "max_bars_per_context": -1,
+        "max_contexts_per_file": -1,
+        "bar_token_mask": None,
+        "bar_token_idx": 2,
+        "batch_size": parameters.batch_size,
+        "num_workers": parameters.num_workers,
+        "pin_memory": parameters.pin_memory,
+        "train_val_test_split": (0.7, 0.2, 0.1),
+        "load_latent": True,
+        "load_symb": True,
+        "load_emotions": True,
+        "load_global_features": False,
+        "load_text_prompts": False,
+        "encode": parameters.encode,
+        "caption": False,
+    }
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    accumulate_grad_batches = generator_config.get("target_batch_size", 256) // datamodule.batch_size
-
-    if generator_config["load_from_checkpoint"]:
-        generator_checkpoint = generator_config.get("checkpoint_path")
-        model = load_generator_from_checkpoint(generator_checkpoint, eval=False)
-    elif generator_config["load_weights"]:
-        weights_path = generator_config.get("weights_path")
-        training_config_path = generator_config.get("config_path")
-        model = load_generator_weights(weights_path, training_config_path, eval=False)
+    accumulate_grad_batches = parameters.batch_size // datamodule.batch_size
+    
+    if parameters.load_from_checkpoint and parameters.checkpoint_path:
+        # Load from checkpoint
+        model = load_generator_from_checkpoint(parameters.checkpoint_path, eval=False)
+    elif parameters.load_weights and parameters.weights_path and parameters.config_path:
+        # Load from separate weights and config files
+        model = load_generator_weights(parameters.weights_path, parameters.config_path, eval=False)
     else:
-        model = MIDIGeneratorModule(
-            d_model=config.get("vae", {}).get("d_model", 512),
-            d_latent=config.get("vae", {}).get("d_latent", 1024),
-            context_size=datamodule_parameters["context_size"],
-            max_bars=datamodule_parameters["max_bars"],
-            max_positions=datamodule_parameters["max_positions"],
-            lr=generator_config.get("lr", 1e-4),
-            lr_schedule=generator_config.get("lr_schedule", "const"),
-            warmup_steps=generator_config.get("warmup_steps", 4000),
-            max_steps=generator_config.get("max_steps", 100000000000000000000),
-            encoder_layers=generator_config.get("encoder_layers", 6),
-            decoder_layers=generator_config.get("decoder_layers", 6),
-            intermediate_size=generator_config.get("intermediate_size", 2048),
-            num_attention_heads=generator_config.get("num_attention_heads", 8),
-        )
+        # Create new model from parameters
+        model_params = {
+            "d_model": parameters.d_model,
+            "d_latent": parameters.d_latent,
+            "context_size": parameters.context_size,
+            "max_bars": parameters.max_bars,
+            "max_positions": parameters.max_positions,
+            "lr": parameters.lr,
+            "lr_schedule": parameters.lr_schedule,
+            "warmup_steps": parameters.warmup_steps,
+            "max_steps": parameters.max_steps,
+            "encoder_layers": parameters.encoder_layers,
+            "decoder_layers": parameters.decoder_layers,
+            "intermediate_size": parameters.intermediate_size,
+            "num_attention_heads": parameters.num_attention_heads,
+            "device": parameters.device,
+        }
+        
+        model = MIDIGeneratorModule(**model_params)
 
-    device = torch.device(generator_config.get("device", "cuda"))
-    model.to(device)
+    device = torch.device(parameters.device)
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
-    checkpoint_path = os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name"), "checkpoints")
-    if not os.path.exists(checkpoint_path):
-        os.makedirs(checkpoint_path)
 
-    # Replace standard checkpoint callback with weights-only checkpoint
+    # Create checkpoint directory if it doesn't exist
+    os.makedirs(parameters.checkpoint_dir, exist_ok=True)
+
     checkpoint_callback = WeightsOnlyCheckpoint(
-        monitor="valid_loss",
-        dirpath=checkpoint_path,
-        filename="{step}-{valid_loss:.2f}",
+        dirpath=parameters.checkpoint_dir,
+        filename="{step}-{val_loss:.2f}",
+        monitor="val_loss",
         save_last=True,
-        save_top_k=0,
-        every_n_train_steps=500,
+        save_top_k=parameters.save_top_k,
+        every_n_train_steps=1000,
     )
-
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     trainer = Trainer(
-        default_root_dir=os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), generator_config.get("training_name"), "training_logs"),
-        devices=device_count,
-        accelerator="gpu",
-        profiler="simple",
+        max_steps=parameters.max_steps,
+        max_epochs=parameters.max_epochs,
+        accelerator="gpu" if device_count > 0 else "cpu",
+        devices=min(device_count, parameters.gpus) if device_count > 0 else "auto",
+        accumulate_grad_batches=accumulate_grad_batches,
+        val_check_interval=parameters.val_check_interval,
+        log_every_n_steps=parameters.log_every_n_steps,
+        limit_val_batches=parameters.limit_val_batches,
+        num_sanity_val_steps=parameters.num_sanity_val_steps,
         callbacks=[checkpoint_callback, lr_monitor],
-        enable_checkpointing=True,
-        max_epochs=generator_config.get("epochs", 100),
-        max_steps=generator_config.get("max_training_steps", 100000),
-        log_every_n_steps=max(100, min(25 * accumulate_grad_batches, 200)),
-        val_check_interval=max(500, min(300 * accumulate_grad_batches, 1000)),
-        limit_val_batches=64,
-        num_sanity_val_steps=0,
     )
 
-    trainer.fit(model, datamodule=datamodule)
-
-    return {"Message": "Trained Generator"}
+    try:
+        trainer.fit(model, datamodule=datamodule)
+        return {"Message": "Generator training completed successfully"}
+    except Exception as e:
+        return {"Message": f"Generator training failed: {str(e)}"}
 
 
 def generate_from_midi(parameters: GenerateFromMIDIParameters, model=None) -> dict:

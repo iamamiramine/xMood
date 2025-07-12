@@ -1,0 +1,84 @@
+metadata:
+  environment: testing
+  description: "Testing environment configuration with test-specific settings and fixtures"
+  version: "1.0"
+  
+global:
+  device: "cpu"  # Use CPU for tests
+  seed: 123  # Fixed seed for reproducible tests
+  debug: false
+  log_level: "INFO"
+  output_root: "output/test/"
+  checkpoints_root: "checkpoints/test/"
+  logs_root: "logs/test/"
+  
+data:
+  # Minimal datasets for fast testing
+  batch_size: 2
+  max_bars: 8
+  max_contexts_per_file: 5
+  num_workers: 1
+  pin_memory: false
+  
+services:
+  classifier:
+    debug: false
+    model_size: "tiny"
+    training:
+      max_epochs: 1
+      patience: 1
+      
+  encoder:
+    debug: false
+    vocab_size: 100  # Minimal vocab for tests
+    
+  generator:
+    debug: false
+    sample_size: 2
+    max_generation_steps: 10
+    
+  feature_extraction:
+    debug: false
+    extract_all_features: false
+    
+  multimodal_mapping:
+    debug: false
+    embedding_dim: 64
+    
+  music_base:
+    debug: false
+    
+  dataloader:
+    debug: false
+    cache_size: 10
+    
+  pseudo_labeller:
+    debug: false
+    
+pipeline:
+  training:
+    save_every_n_steps: 1
+    validate_every_n_steps: 1
+    
+  inference:
+    timeout: 10  # seconds
+    
+job_management:
+  max_concurrent_jobs: 1
+  job_timeout: 60  # 1 minute
+  
+resource_limits:
+  memory_limit: "2GB"
+  cpu_limit: 1
+  
+paths:
+  datasets: "datasets/test/"
+  models: "models/test/"
+  temp: "temp/test/"
+  
+# Test-specific settings
+test_settings:
+  use_mock_data: true
+  mock_model_responses: true
+  skip_heavy_computations: true
+  test_timeout: 30 

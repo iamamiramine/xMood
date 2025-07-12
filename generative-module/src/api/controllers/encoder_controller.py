@@ -2,8 +2,12 @@ import asyncio
 
 from fastapi import APIRouter
 
-from application.encoder.services import encoder_service
-from domain.models.encoder.encoder_model import EncodeParameters
+from application.encoder.services.encoder_service import (
+    encode_midi as _encode_midi,
+    encode_dataset as _encode_dataset,
+    tokenize_remi_dataset as _tokenize_remi_dataset,
+)
+from domain.models.encoder.encoder_model import EncodeParameters, EncodeDatasetParameters, TokenizeRemiDatasetParameters
 
 router = APIRouter()
 
@@ -11,60 +15,52 @@ router = APIRouter()
 @router.post("/encode_midi")
 def encode_midi(parameters: EncodeParameters) -> dict:
     """
-    Description:
-    ------------
-        Encode MIDI
-
-    Parameters:
-    -----------
-        parameters: EncodeMidiParameters
-
+    Encode a single MIDI file using REMI representation.
+    
+    Args:
+        parameters: EncodeParameters containing MIDI file path and processing options
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Encoding result message
     """
-    return encoder_service.encode_midi(parameters)
+    try:
+        result = _encode_midi(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/encode_dataset")
-def encode_dataset(config_path: str) -> dict:
+async def encode_dataset(parameters: EncodeDatasetParameters) -> dict:
     """
-    Description:
-    ------------
-        Encode MIDI
-
-    Parameters:
-    -----------
-        config: str
-
+    Encode an entire dataset of MIDI files using REMI representation.
+    
+    Args:
+        parameters: EncodeDatasetParameters containing dataset configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Encoding result summary
     """
-    # return encoder_service.encode_dataset(parameters)
-    return asyncio.run(encoder_service.encode_dataset(config_path))
+    try:
+        result = await _encode_dataset(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/tokenize_remi_dataset")
-def tokenize_remi_dataset(config_path: str) -> dict:
+async def tokenize_remi_dataset(parameters: TokenizeRemiDatasetParameters) -> dict:
     """
-    Description:
-    ------------
-        Tokenize REMI Dataset
-
-    Parameters:
-    -----------
-        config: str
-
+    Tokenize REMI sequences from an encoded dataset.
+    
+    Args:
+        parameters: TokenizeRemiDatasetParameters containing tokenization configuration
+        
     Returns:
-    --------
-    dict
-        A dictionary
-
+        dict: Tokenization result summary
     """
-    # return encoder_service.tokenize_remi_dataset(parameters)
-    return asyncio.run(encoder_service.tokenize_remi_dataset(config_path))
+    try:
+        result = await _tokenize_remi_dataset(parameters)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

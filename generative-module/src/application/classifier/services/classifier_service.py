@@ -21,13 +21,14 @@ from application.classifier.helpers.midi_helper.remi.midi2event import analyzer,
 from application.classifier.models.data import PEmo_Dataset
 
 from domain.models.classifier.classifier_model import PredictMoodParameters, TrainingParameters, MidiFeatureExtractParameters, BatchPredictParameters
+from domain.constants.model_constants import ModelConstants
+from domain.constants.classifier_constants import ClassifierConstants
 
-# Define mood names for the 9 mood categories
-MOOD_NAMES = ["HAPPY_KEY", "DRAMATIC_KEY", "RELAXING_KEY", "LOVE_KEY", "DARK_KEY", "CHRISTMAS_KEY", "ENERGETIC_KEY", "MEDITATIVE_KEY", "MOTIVATIONAL_KEY"]
+# Use mood names from constants
+MOOD_NAMES = ModelConstants.MOOD_NAMES
 
 # Path configurations
-path_data_root = "datasets/EMOPIA/"
-path_dictionary = os.path.join(path_data_root, "dictionary.pkl")
+path_dictionary = ClassifierConstants.get_dictionary_path()
 
 # Load dictionary if exists
 try:
@@ -146,8 +147,8 @@ def predict(
             print("GPU name:", torch.cuda.get_device_name(device=device))
 
         # Load model configuration
-        config_path = os.path.join("output", "demos", "demo_2", "classifier", "ReMIDICaps", task, model_type, "hparams.yaml")
-        checkpoint_path = os.path.join("output", "demos", "demo_2", "classifier", "ReMIDICaps", task, model_type, "last-v1.ckpt")
+        config_path = ClassifierConstants.get_model_config_path(task, model_type)
+        checkpoint_path = ClassifierConstants.get_model_checkpoint_path(task, model_type)
         config = OmegaConf.load(config_path)
 
         # Determine label list based on task
@@ -161,9 +162,9 @@ def predict(
         # Initialize model
         model = SAN(
             num_of_dim=config.task.num_of_dim,
-            vocab_size=1382,  # Changed from config.midi.pad_idx + 1 to match checkpoint
-            lstm_hidden_dim=128,  # Changed from config.hparams.lstm_hidden_dim to match checkpoint (512/4=128)
-            embedding_size=config.hparams.embedding_size,
+            vocab_size=ClassifierConstants.DEFAULT_VOCAB_SIZE,  # Changed from config.midi.pad_idx + 1 to match checkpoint
+            lstm_hidden_dim=ClassifierConstants.DEFAULT_LSTM_HIDDEN_DIM,  # Changed from config.hparams.lstm_hidden_dim to match checkpoint (512/4=128)
+            d_model=config.hparams.embedding_size,
             r=config.hparams.r,
             cls_type=cls_type,
         )

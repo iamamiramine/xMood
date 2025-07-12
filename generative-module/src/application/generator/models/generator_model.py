@@ -7,8 +7,9 @@ import math
 
 from transformers import BertConfig, EncoderDecoderConfig, EncoderDecoderModel
 
-from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab, MoodsVocab, EmotionVocab
+from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab, EmotionVocab
 from domain.constants.encoder.token_constants import PAD_TOKEN, EOS_TOKEN, BAR_KEY, POSITION_KEY, BOS_TOKEN
+from domain.constants.model_constants import ModelConstants
 
 
 def get_embedding(tensor, embedding_fn, device):
@@ -62,12 +63,11 @@ class MIDIGeneratorModule(pl.LightningModule):
 
         self.vocab = RemiVocab()
         self.symb_vocab = SymbolicFeaturesVocab()
-        # self.moods_vocab = MoodsVocab()
         self.emotion_vocab = EmotionVocab()
 
         encoder_config = BertConfig(
-            vocab_size=1,
-            pad_token_id=0,
+            vocab_size=1, # should be 1
+            pad_token_id=ModelConstants.PAD_TOKEN_ID,
             hidden_size=self.d_model,
             num_hidden_layers=encoder_layers,
             num_attention_heads=num_attention_heads,
@@ -76,8 +76,8 @@ class MIDIGeneratorModule(pl.LightningModule):
             position_embedding_type="relative_key_query",
         )
         decoder_config = BertConfig(
-            vocab_size=1,
-            pad_token_id=0,
+            vocab_size=1, # should be 1
+            pad_token_id=ModelConstants.PAD_TOKEN_ID,
             hidden_size=self.d_model,
             num_hidden_layers=decoder_layers,
             num_attention_heads=num_attention_heads,
@@ -109,29 +109,18 @@ class MIDIGeneratorModule(pl.LightningModule):
         self.save_hyperparameters()
 
     def encode(self, z=None, symb_bar_ids=None):
-        latent_emb, symb_emb, moods_emb = None, None, None
+        latent_emb, symb_emb = None, None
         if z is not None and "bar_symbolic" in z:
             symb_emb = get_embedding(z.get("bar_symbolic"), self.symb_in, self._device)
 
         if z is not None and "latents" in z:
             latent_emb = get_embedding(z.get("latents"), self.latent_in, self._device)
 
-        if z is not None and "moods" in z:
-            # Get moods embeddings and broadcast them across time dimension
-            moods_emb = get_embedding(z.get("moods"), self.moods_in, self._device)
-            # Ensure moods embeddings are properly shaped (batch_size, 1, d_model)
-            if len(moods_emb.shape) == 2:
-                moods_emb = moods_emb.unsqueeze(1)
-
         # Handle bar-level features first (symbolic and latents)
         bar_level_embeddings = [emb for emb in [symb_emb, latent_emb] if emb is not None]
 
         if not bar_level_embeddings:
-            if moods_emb is not None:
-                # If we only have moods embeddings, use them directly
-                z_emb = moods_emb
-            else:
-                return None
+            return None
         else:
             # Process bar-level features
             padded_bar_embeddings = pad_and_transpose(bar_level_embeddings)
@@ -157,14 +146,6 @@ class MIDIGeneratorModule(pl.LightningModule):
                     symb_emb = symb_emb + self.bar_embedding(symb_bar_ids.to(self._device))
                     z_embeddings = [emb for emb in [symb_emb, latent_emb] if emb is not None]
                 z_emb = self.symb_proj(concatenate_embeddings(*z_embeddings))
-
-            # If we have moods embeddings, broadcast and add them
-            if moods_emb is not None:
-                # Broadcast moods embeddings to match sequence length
-                seq_len = z_emb.size(1)
-                moods_emb = moods_emb.expand(-1, seq_len, -1)
-                # Add moods embeddings to the bar-level features
-                z_emb = z_emb + moods_emb
 
         out = self.transformer.encoder(inputs_embeds=z_emb, output_hidden_states=True)
         encoder_hidden = out.hidden_states[-1]
@@ -226,7 +207,6 @@ class MIDIGeneratorModule(pl.LightningModule):
         available_inputs = {
             "latents": batch.get("latents"),
             "bar_symbolic": batch.get("bar_symbolic"),
-            "moods": batch.get("moods"),
         }
 
         # Filter out None values

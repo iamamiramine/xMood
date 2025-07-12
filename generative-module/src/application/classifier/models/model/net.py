@@ -6,23 +6,24 @@ import torch
 import torch.nn as nn
 from application.classifier.models.model.ops import ConvolutionLayer, MaxOverTimePooling, Conv1d_mp, BiLSTM, ConvBlock, SelfAttention
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, PackedSequence
+from domain.constants.model_constants import ModelConstants, ClassifierType
 
 
 class SAN(nn.Module):
-    def __init__(self, num_of_dim, vocab_size, embedding_size, r, lstm_hidden_dim=128, da=128, hidden_dim=256, cls_type="AV") -> None:
+    def __init__(self, num_of_dim, vocab_size, d_model, r, lstm_hidden_dim=128, da=128, hidden_dim=256, cls_type="AV") -> None:
         super(SAN, self).__init__()
-        self._embedding = nn.Embedding(vocab_size, embedding_size)
-        self._bilstm = nn.LSTM(embedding_size, lstm_hidden_dim, batch_first=True, bidirectional=True)
+        self._embedding = nn.Embedding(vocab_size, d_model)
+        self._bilstm = nn.LSTM(d_model, lstm_hidden_dim, batch_first=True, bidirectional=True)
         self._attention = SelfAttention(2 * lstm_hidden_dim, da, r)
         
         self.cls_type = cls_type
         
-        # For mood prediction (9 dimensions with softmax to ensure outputs sum to 1)
-        if self.cls_type == "MOOD":
+        # For mood prediction (use configurable dimensions)
+        if self.cls_type == ClassifierType.MOOD.value:
             self._classifier = nn.Sequential(
                 nn.Linear(2 * lstm_hidden_dim * r, hidden_dim), 
                 nn.ReLU(), 
-                nn.Linear(hidden_dim, 9),
+                nn.Linear(hidden_dim, ModelConstants.MOOD_DIMENSIONS),
                 nn.Softmax(dim=1)  # Ensure outputs sum to 1
             )
         else:

@@ -91,7 +91,7 @@ def main(
     labels_path: str = None,
     r: int = 14,
     lstm_hidden_dim: int = 64,  # 128,
-    embedding_size: int = 100,  # 300,
+    d_model: int = 100,  # 300,
     batch_size: int = 4,
     num_workers: int = 8,
     lr: float = 1e-3,
@@ -115,7 +115,7 @@ def main(
     args.labels_path = labels_path
     args.r = r
     args.lstm_hidden_dim = lstm_hidden_dim
-    args.embedding_size = embedding_size
+    args.d_model = d_model
     args.batch_size = batch_size
     args.num_workers = num_workers
     args.lr = lr
@@ -135,7 +135,7 @@ def main(
     if reproduce:
         seed_everything(42)
 
-    save_path = f"output/demos/demo_2/classifier/{dataset}/{task}/{midi}/batch:{batch_size}-h:{lstm_hidden_dim}-emd:{embedding_size}-wd:{weight_decay}-attn:{r}-T_0:{T_0}-lr:{lr}/"
+    save_path = f"output/demos/demo_2/classifier/{dataset}/{task}/{midi}/batch:{batch_size}-h:{lstm_hidden_dim}-emd:{d_model}-wd:{weight_decay}-attn:{r}-T_0:{T_0}-lr:{lr}/"
     fix_config = get_config(args)
     pipeline = PEmoPipeline(config=args, fix_config=fix_config)
 
@@ -146,7 +146,7 @@ def main(
     # Set cls_type to MOOD if using a labels_path
     cls_type = "MOOD" if labels_path else task
 
-    model = SAN(r=r, num_of_dim=fix_config.task.num_of_dim, vocab_size=len(vocab) + 1, embedding_size=embedding_size, cls_type=cls_type)
+    model = SAN(r=r, num_of_dim=fix_config.task.num_of_dim, vocab_size=len(vocab) + 1, d_model=d_model, cls_type=cls_type)
     runner = Runner(model, args, eval_type="last")
 
     # logger = get_wandb_logger(model)
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     # model
     parser.add_argument("--r", default=14, type=int)
     parser.add_argument("--lstm_hidden_dim", default=128, type=float)
-    parser.add_argument("--embedding_size", default=300, type=float)
+    parser.add_argument("--d_model", default=300, type=float)
     # pipeline
     parser.add_argument("--batch_size", default=8, type=float)
     parser.add_argument("--num_workers", default=8, type=float)
@@ -206,4 +206,4 @@ if __name__ == "__main__":
     parser.add_argument("--reproduce", default=True, type=str2bool)
 
     args = parser.parse_args()
-    main(args)
+    main(**vars(args))

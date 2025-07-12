@@ -127,75 +127,6 @@ def get_chord_outsiders_2():
     }
 
 
-def generate_webers_table():
-    """
-    Generate Weber's table of key relationships based on the 12 pitch classes.
-    The table represents relationships between major and minor keys where:
-    - Uppercase letters represent major keys
-    - Lowercase letters represent minor keys
-    - Vertical axis represents movement by fifths (7 semitones)
-    - Horizontal axis represents alternating relative minors (9 semitones down)
-        and major thirds (4 semitones up)
-
-    Returns:
-        List[List[str]]: 2D array representing Weber's table (13x10)
-    """
-    pitch_classes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-    def next_fifth(key):
-        """Get next key in circle of fifths (up 7 semitones)"""
-        idx = pitch_classes.index(key)
-        return pitch_classes[(idx + 7) % 12]
-
-    def get_relative_minor(major_key):
-        """Get relative minor (down 3 semitones / up 9 semitones)"""
-        idx = pitch_classes.index(major_key)
-        return pitch_classes[(idx + 9) % 12].lower()
-
-    def get_major_third(key):
-        """Get major third relationship (up 4 semitones)"""
-        idx = pitch_classes.index(key.upper())
-        return pitch_classes[(idx + 4) % 12]
-
-    # Initialize the table (13 rows x 10 columns)
-    table = [[None] * 10 for _ in range(13)]
-
-    # Start with C major in the middle row
-    middle_row = 6
-    current_key = "C"
-
-    # Fill the vertical axis (circle of fifths)
-    # Fill upward from middle
-    for row in range(middle_row, -1, -1):
-        table[row][0] = current_key
-        current_key = next_fifth(current_key)
-
-    # Fill downward from middle
-    current_key = "F"  # Start with F for downward movement
-    for row in range(middle_row + 1, 13):
-        table[row][0] = current_key
-        current_key = next_fifth(current_key)
-
-    # Fill horizontal axis for each row
-    for row in range(13):
-        current_key = table[row][0]
-
-        # Fill each row with alternating relative minor and major third relationships
-        for col in range(10):
-            if col == 0:
-                continue  # Skip first column as it's already filled
-
-            if col % 2 == 1:
-                # Odd columns: relative minor
-                table[row][col] = get_relative_minor(current_key)
-            else:
-                # Even columns: major third up from previous
-                current_key = get_major_third(current_key)
-                table[row][col] = current_key
-
-    return table
-
-
 def generate_scale(root, intervals):
     """
     Generates a scale based on a root note and intervals.
@@ -284,34 +215,6 @@ def get_chords(root, scale_type):
         raise ValueError(f"Invalid scale type: {scale_type}")
 
 
-def get_all_major_minor_keys_chords():
-    """
-    Generate a complete mapping of all possible keys to their primary and secondary chords.
-
-    Returns:
-        dict: Nested dictionary structure:
-            {
-                "major": {
-                    root: {chord_degree: chord_symbol, ...},
-                    ...
-                },
-                "minor": {
-                    root: {chord_degree: chord_symbol, ...},
-                    ...
-                }
-            }
-    """
-    pitch_classes = get_pitch_classes()
-    # Create separate dictionaries for major and minor keys
-    major_keys_chords = {root: get_chords(root, "major") for root in pitch_classes}
-    minor_keys_chords = {root: get_chords(root, "minor") for root in pitch_classes}
-    key_chords = {
-        "major": major_keys_chords,
-        "minor": minor_keys_chords,
-    }
-    return key_chords
-
-
 def key_index():
     """
     Generate a list of all possible keys in format 'pitch:scale_type'.
@@ -326,62 +229,3 @@ def key_index():
     keys = [f"{pitch}:major" for pitch in pitch_classes] + [f"{pitch}:minor" for pitch in pitch_classes]
 
     return keys
-
-
-# Sharp to natural and natural to sharp mappings
-sharp_to_natural = {"C#": "C", "D#": "D", "E#": "E", "F#": "F", "G#": "G", "A#": "A", "B#": "B"}
-
-natural_to_sharp = {
-    "C": "C#",
-    "D": "D#",
-    "E": "E#",  # E# is enharmonically F
-    "F": "F#",
-    "G": "G#",
-    "A": "A#",
-    "B": "B#",  # B# is enharmonically C, but depends on your context
-}
-
-
-def generate_chord_notes():
-    """
-    Generate a complete mapping of all possible chords and their constituent notes.
-
-    The function creates chords for each root note using the following qualities:
-    - Major triad (maj): root, major third, perfect fifth
-    - Minor triad (min): root, minor third, perfect fifth
-    - Diminished triad (dim): root, minor third, diminished fifth
-    - Augmented triad (aug): root, major third, augmented fifth
-    - Dominant seventh (dom7): root, major third, perfect fifth, minor seventh
-    - Major seventh (maj7): root, major third, perfect fifth, major seventh
-    - Minor seventh (min7): root, minor third, perfect fifth, minor seventh
-
-    Returns:
-        dict: Nested dictionary structure:
-            {
-                root_note: {
-                    chord_quality: [list of notes in chord],
-                    ...
-                },
-                ...
-            }
-    """
-    pitch_classes = get_pitch_classes()
-
-    # Get chord intervals from existing function to ensure consistency
-    chord_intervals = get_chord_maps()
-
-    def generate_chord(root_index, intervals):
-        """
-        Calculate notes for a specific chord.
-
-        Args:
-            root_index: Index of root note in pitch_classes
-            intervals: List of semitone intervals from root
-
-        Returns:
-            list: Notes that make up the chord
-        """
-        return [pitch_classes[(root_index + interval) % len(pitch_classes)] for interval in intervals]
-
-    # Generate chords for each root note and quality
-    return {root: {quality: generate_chord(pitch_classes.index(root), intervals) for quality, intervals in chord_intervals.items()} for root in pitch_classes}

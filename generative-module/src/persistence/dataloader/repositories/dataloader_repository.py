@@ -17,7 +17,7 @@ class CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
-# Asynchronous function to save the tonal plan
+# Asynchronous function to save
 def save_async(out_dir, midi_file, data, file_name):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)

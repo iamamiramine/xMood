@@ -2,14 +2,16 @@ import asyncio
 import os
 import json
 import pandas as pd
-
+import time
+from typing import Dict, Any, Union
 
 import torch
 
 import pretty_midi as pm
 
-from lightning.pytorch import Trainer
+import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.loggers import WandbLogger
 
 from persistence.dataloader.repositories.dataloader_repository import (
     save_async,
@@ -30,9 +32,12 @@ from application.dataloader.models.dataloader_model import DataloaderModule
 from application.feature_extraction.helpers.latent_features_helper import (
     load_vae_from_checkpoint,
 )
-from domain.models.feature_extraction.feature_extraction_model import SymbolicFeaturesParameters
-from application.feature_extraction.models.vae_model import VqVaeModule
-
+from domain.models.feature_extraction.feature_extraction_model import (
+    SymbolicFeaturesParameters,
+    SymbolicFeaturesDatasetParameters,
+    VaeTrainingParameters,
+    LatentRepresentationParameters,
+)
 from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     VAE_PATH,
@@ -96,74 +101,109 @@ def extract_symbolic_features(parameters: SymbolicFeaturesParameters):
     return {"Message": "Symbolic Features Extracted Successfully"}
 
 
-async def extract_symbolic_features_dataset(dataset_name: str = "", level: str = "bar", add_position_tokens: bool = False) -> dict:
-    # dataset_path = MIDI_PATH
-    dataset_path = "output/demos/demo_2/generated/ReMIDICaps_test_set"
-    processed_dir = os.path.join(PROCESSED_PATH, dataset_name)
+async def extract_symbolic_features_dataset(parameters: SymbolicFeaturesDatasetParameters) -> dict:
+    """
+    Extract symbolic features from an entire dataset using BaseModel parameters.
 
-    # Initialize variables for CSV handling if needed
-    is_piece_level = level == "piece"
+    Args:
+        parameters: SymbolicFeaturesDatasetParameters containing all configuration
 
-    # CSV file path
-    # csv_file_path = os.path.join(LABELS_PATH, f"{dataset_name}.csv")
-    csv_file_path = "output/demos/demo_2/generated/ReMIDICaps_test_set_out.csv"
+    Returns:
+        dict: Summary of the extraction process
+    """
+    
+    # Set up paths
+    dataset_path = MIDI_PATH
+    processed_dir = parameters.processed_dir or os.path.join(PROCESSED_PATH, parameters.dataset_name)
+    output_dir = parameters.output_dir or processed_dir
 
-    # Initialize or load the CSV file
-    df = pd.read_csv(csv_file_path)
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get MIDI files from the dataset path
+    midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
+    
+    # Limit files if specified
+    if parameters.max_files:
+        midi_files = midi_files[:parameters.max_files]
+    
+    # Resume from specific file if specified
+    if parameters.resume_from:
+        try:
+            start_index = midi_files.index(parameters.resume_from)
+            midi_files = midi_files[start_index:]
+        except ValueError:
+            print(f"Warning: Resume file {parameters.resume_from} not found, starting from beginning")
 
-    async def process_file(file_path: str) -> tuple[bool, str]:
-        result = extract_symbolic_features(
-            SymbolicFeaturesParameters(
-                midi=file_path,
-                processed_dir=processed_dir,
-                save=True,
-                level=level,
-                add_position_tokens=add_position_tokens,
-            )
-        )
-
-        # If it's piece-level, update CSV file immediately
-        if is_piece_level and "csv_data" in result:
-            # Get the data from the result
-            csv_data = result["csv_data"]
-            file_name = csv_data["file"]
-            global_features = csv_data["global_features"]
-
-            # Update each column individually
-            row_idx = df.index[df["file"] == file_name].tolist()[0]
-
-            # Add the global_features column if it doesn't exist
-            if "global_features" not in df.columns:
-                df["global_features"] = None
-
-            # Format global_features as a space-separated string similar to mood_tokens
-            if isinstance(global_features, list):
-                formatted_features = " ".join(global_features)
-            else:
-                formatted_features = str(global_features)
-
-            df.at[row_idx, "global_features"] = formatted_features
-
-            # Save to CSV file after each update
-            df.to_csv(csv_file_path, index=False)
-            print(f"Updated {dataset_name}.csv for file {file_name} with global features", flush=True)
-
-        return True, ""
-
-    # Create tasks for each file
-    all_midi_files = [f for f in os.listdir(dataset_path) if f.endswith((".mid", ".midi"))]
-    # Filter to only include files that are in the CSV
-    midi_files = [f for f in all_midi_files if f in df["file"].values]
     total_files = len(midi_files)
-    print(f"Total files to process: {total_files}", flush=True)
     processed = 0
     successful = 0
     errors = []
 
+    async def process_file(file_path: str) -> tuple[bool, str]:
+        try:
+            filename = os.path.basename(file_path)
+            
+            # Check if already processed and not overwriting
+            output_file = os.path.join(output_dir, f"{filename}_processed.pkl")
+            if os.path.exists(output_file) and not parameters.overwrite_existing:
+                return True, f"Skipped {filename} (already exists)"
+
+            # Load processed data
+            try:
+                processed_data = async_load(processed_dir, filename, "processed")
+            except Exception as e:
+                return False, f"Could not load processed data for {filename}: {str(e)}"
+
+            # Check if encodings exist
+            if "encodings" not in processed_data:
+                return False, f"No encodings found for {filename}"
+
+            # Extract symbolic features based on level
+            if parameters.level == "piece":
+                symbolic_features = get_piece_level_symbolic_features(
+                    midi=file_path,
+                    groups=processed_data["encodings"].get("groups", []),
+                    omit_time_sig=parameters.omit_time_sig,
+                    omit_instruments=parameters.omit_instruments,
+                    omit_chords=parameters.omit_chords,
+                    omit_meta=parameters.omit_meta,
+                )
+            else:  # bar level
+                symbolic_features = get_symbolic_features(
+                    midi=file_path,
+                    groups=processed_data["encodings"].get("groups", []),
+                    omit_time_sig=parameters.omit_time_sig,
+                    omit_instruments=parameters.omit_instruments,
+                    omit_chords=parameters.omit_chords,
+                    omit_meta=parameters.omit_meta,
+                    add_position_tokens=parameters.add_position_tokens,
+                )
+
+            # Add symbolic features to processed data
+            if "symbolic_features" not in processed_data:
+                processed_data["symbolic_features"] = {}
+            
+            if parameters.level == "piece":
+                processed_data["symbolic_features"]["piece_symbolic"] = symbolic_features
+            else:
+                processed_data["symbolic_features"]["bar_symbolic"] = symbolic_features
+
+            # Save updated processed data if requested
+            if parameters.save:
+                save_async(output_dir, filename, processed_data, "processed")
+
+            return True, ""
+        except Exception as e:
+            filename = os.path.basename(file_path)
+            if parameters.skip_invalid:
+                return False, f"Skipped invalid file {filename}: {str(e)}"
+            else:
+                return False, f"Error processing {filename}: {str(e)}"
+
     # Process files in batches
-    batch_size = 10
     while processed < total_files:
-        batch = midi_files[processed : processed + batch_size]
+        batch = midi_files[processed : processed + parameters.batch_size]
         batch_tasks = [process_file(os.path.join(dataset_path, file)) for file in batch]
 
         # Process batch
@@ -177,140 +217,165 @@ async def extract_symbolic_features_dataset(dataset_name: str = "", level: str =
                 errors.append(error_msg)
 
         processed += len(batch)
+        print(f"Processed {processed}/{total_files} files", flush=True)
 
     # Prepare summary message
-    position_tokens_str = " with position tokens" if add_position_tokens and level == "bar" else ""
-    summary = (
-        f"Symbolic Features Extraction Complete ({level} level{position_tokens_str})\n"
-        f"Total files: {total_files}\n"
-        f"Successfully processed: {successful}\n"
-        f"Failed: {len(errors)}\n"
-    )
+    summary = f"Symbolic Features Extraction Complete\n" f"Total files: {total_files}\n" f"Successfully processed: {successful}\n" f"Failed: {len(errors)}\n"
     if errors:
-        summary += "\nErrors:\n" + "\n".join(errors)
+        summary += "\nErrors:\n" + "\n".join(errors[:10])
+        if len(errors) > 10:
+            summary += f"\n... and {len(errors) - 10} more errors"
 
     return {"Message": summary}
 
 
-def train_vae(config_path: str) -> dict:
-    """Train a VAE model using parameters from the config file."""
-    # Load configuration
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    vae_config = config.get("vae", {})
-    datamodule_parameters = config["dataloader"]
-    datamodule_parameters["load_latent"] = False
-    datamodule_parameters["load_symb"] = False
+def train_vae(parameters: VaeTrainingParameters) -> dict:
+    """Train a VAE model using BaseModel parameters."""
+    
+    # Set up data module parameters
+    datamodule_parameters = {
+        "dataset_name": parameters.dataset_name,
+        "context_size": parameters.context_size,
+        "max_positions": parameters.max_positions if hasattr(parameters, 'max_positions') else 1024,
+        "max_bars": parameters.max_bars if hasattr(parameters, 'max_bars') else 512,
+        "max_bars_per_context": -1,
+        "max_contexts_per_file": -1,
+        "bar_token_mask": None,
+        "bar_token_idx": 2,
+        "batch_size": parameters.batch_size,
+        "num_workers": parameters.num_workers,
+        "pin_memory": parameters.pin_memory,
+        "train_val_test_split": (0.7, 0.2, 0.1),
+        "load_latent": parameters.load_latent,
+        "load_symb": parameters.load_symb,
+        "load_emotions": False,
+        "load_global_features": False,
+        "load_text_prompts": False,
+        "encode": False,
+        "caption": False,
+    }
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    accumulate_grad_batches = vae_config.get("target_batch_size", 256) // datamodule.batch_size
-    if vae_config.get("load_from_checkpoint", False):
-        model = load_vae_from_checkpoint(vae_config.get("checkpoint_path"))
+    accumulate_grad_batches = parameters.batch_size // datamodule.batch_size
+    
+    if parameters.load_from_checkpoint and parameters.checkpoint_path:
+        model = load_vae_from_checkpoint(parameters.checkpoint_path)
     else:
-        model = VqVaeModule(
-            dataset_name=config.get("dataloader", {}).get("dataset_name"),
-            d_model=vae_config.get("d_model", 512),
-            context_size=datamodule.context_size,
-            n_codes=vae_config.get("n_codes", 2048),
-            n_groups=vae_config.get("n_groups", 16),
-            d_latent=vae_config.get("d_latent", 1024),
-            lr=vae_config.get("lr", 1e-4),
-            lr_schedule=vae_config.get("lr_schedule", "const"),
-            warmup_steps=vae_config.get("warmup_steps", 4000),
-            max_steps=vae_config.get("max_steps", 100000000000000000000),
-            encoder_layers=vae_config.get("encoder_layers", 4),
-            decoder_layers=vae_config.get("decoder_layers", 6),
-            encoder_ffn_dim=vae_config.get("encoder_ffn_dim", 2048),
-            decoder_ffn_dim=vae_config.get("decoder_ffn_dim", 2048),
-            windowed_attention_pr=vae_config.get("windowed_attention_pr", 0.0),
-            max_lookahead=vae_config.get("max_lookahead", 4),
-            disable_vq=vae_config.get("disable_vq", False),
-            accumulate_grad_batches=accumulate_grad_batches,
-            max_positions=datamodule.max_positions,
-            automatic_optimization=vae_config.get("automatic_optimization", False),
-            beta=vae_config.get("beta", 0.02),
-            cycle_length=vae_config.get("cycle_length", 2000),
-            position_embedding_type=vae_config.get("position_embedding_type", "relative_key_query"),
-            num_attention_heads=vae_config.get("num_attention_heads", 8),
-            decay=vae_config.get("decay", 0.995),
-            eps=vae_config.get("eps", 1e-4),
-            restart_threshold=vae_config.get("restart_threshold", 0.99),
-        )
+        # Create new model from parameters
+        model_params = {
+            "dataset_name": parameters.dataset_name,
+            "d_model": parameters.d_model,
+            "context_size": parameters.context_size,
+            "n_codes": parameters.n_codes,
+            "n_groups": parameters.n_groups,
+            "d_latent": parameters.d_latent,
+            "lr": parameters.lr,
+            "lr_schedule": parameters.lr_schedule,
+            "warmup_steps": parameters.warmup_steps,
+            "max_steps": parameters.max_steps,
+            "encoder_layers": parameters.encoder_layers,
+            "decoder_layers": parameters.decoder_layers,
+            "encoder_ffn_dim": parameters.encoder_ffn_dim,
+            "decoder_ffn_dim": parameters.decoder_ffn_dim,
+            "windowed_attention_pr": parameters.windowed_attention_pr,
+            "max_lookahead": parameters.max_lookahead,
+            "disable_vq": parameters.disable_vq,
+            "accumulate_grad_batches": accumulate_grad_batches,
+            "max_positions": parameters.max_positions if hasattr(parameters, 'max_positions') else 1024,
+            "automatic_optimization": False,
+            "beta": parameters.beta,
+            "cycle_length": parameters.cycle_length,
+            "position_embedding_type": "relative_key_query",
+            "num_attention_heads": parameters.num_attention_heads if hasattr(parameters, 'num_attention_heads') else 8,
+            "decay": parameters.decay,
+            "eps": parameters.eps,
+            "restart_threshold": parameters.restart_threshold,
+        }
+        
+        model = VqVaeModule(**model_params)
 
-    device = torch.device(vae_config.get("device", "cuda"))
-    model.to(device)
+    device = torch.device(parameters.device)
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
-    checkpoint_path = os.path.join(CHECKPOINTS_PATH, config.get("dataloader", {}).get("dataset_name"), vae_config.get("training_name"), "checkpoints")
-    if not os.path.exists(checkpoint_path):
-        os.makedirs(checkpoint_path)
+
+    # Create checkpoint directory if it doesn't exist
+    os.makedirs(parameters.checkpoint_dir, exist_ok=True)
+
     checkpoint_callback = ModelCheckpoint(
-        monitor="valid_loss",
-        dirpath=checkpoint_path,
-        filename="{step}-{valid_loss:.2f}",
+        monitor="val_loss",
+        dirpath=parameters.checkpoint_dir,
+        filename="{step}-{val_loss:.2f}",
         save_last=True,
-        save_top_k=0,
-        every_n_train_steps=500,
+        save_top_k=parameters.save_top_k,
+        every_n_train_steps=100,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
-    trainer = Trainer(
-        default_root_dir=os.path.join(CHECKPOINTS_PATH, config.get("dataloader", {}).get("dataset_name"), vae_config.get("training_name"), "training_logs"),
-        devices=device_count,
-        accelerator="gpu",
-        profiler="simple",
+    logger = WandbLogger(project="vae-training") if hasattr(parameters, 'use_wandb') and parameters.use_wandb else None
+
+    trainer = L.Trainer(
+        max_steps=parameters.max_steps,
+        max_epochs=parameters.max_epochs,
+        accelerator="gpu" if device_count > 0 else "cpu",
+        devices=min(device_count, parameters.gpus) if device_count > 0 else "auto",
+        accumulate_grad_batches=accumulate_grad_batches,
+        val_check_interval=parameters.val_check_interval,
+        log_every_n_steps=parameters.log_every_n_steps,
+        limit_val_batches=parameters.limit_val_batches,
+        num_sanity_val_steps=parameters.num_sanity_val_steps,
         callbacks=[checkpoint_callback, lr_monitor],
-        enable_checkpointing=True,
-        max_epochs=vae_config.get("epochs", 100),
-        max_steps=vae_config.get("max_training_steps", 100000),
-        log_every_n_steps=max(100, min(25 * accumulate_grad_batches, 200)),
-        val_check_interval=max(500, min(300 * accumulate_grad_batches, 1000)),
-        limit_val_batches=64,
-        num_sanity_val_steps=0,
+        logger=logger,
     )
 
-    trainer.fit(model, datamodule=datamodule)
+    try:
+        trainer.fit(model, datamodule=datamodule)
+        return {"Message": "VAE training completed successfully"}
+    except Exception as e:
+        return {"Message": f"VAE training failed: {str(e)}"}
 
-    return {"Message": "Trained VAE"}
 
-
-def generate_latent_representations_dataset(
-    config_path: str,
-) -> dict:
-    """Generate latent representations using parameters from the config file."""
-    # Load configuration
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    vae_config = config.get("vae", {})
-    datamodule_parameters = config["dataloader"]
-
-    datamodule_parameters["encode"] = False
-    datamodule_parameters["load_latent"] = False
-    datamodule_parameters["load_symb"] = False
-    datamodule_parameters["context_size"] = -1
-
-    # Convert train_val_test_split from list to tuple if needed
-    if isinstance(datamodule_parameters["train_val_test_split"], list):
-        datamodule_parameters["train_val_test_split"] = tuple(datamodule_parameters["train_val_test_split"])
+async def generate_latent_representations_dataset(parameters: LatentRepresentationParameters) -> dict:
+    """Generate latent representations using BaseModel parameters."""
+    
+    # Set up data module parameters
+    datamodule_parameters = {
+        "dataset_name": parameters.dataset_name,
+        "context_size": parameters.context_size,
+        "max_positions": 1024,
+        "max_bars": 512,
+        "max_bars_per_context": -1,
+        "max_contexts_per_file": -1,
+        "bar_token_mask": None,
+        "bar_token_idx": 2,
+        "batch_size": parameters.batch_size,
+        "num_workers": parameters.num_workers,
+        "pin_memory": parameters.pin_memory,
+        "train_val_test_split": (0.7, 0.2, 0.1),
+        "load_latent": parameters.load_latent,
+        "load_symb": parameters.load_symb,
+        "load_emotions": False,
+        "load_global_features": False,
+        "load_text_prompts": False,
+        "encode": parameters.encode,
+        "caption": False,
+    }
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    accumulate_grad_batches = vae_config.get("target_batch_size", 256) // datamodule.batch_size
-    checkpoint_path = config.get("vae", {}).get("checkpoint_path")
+    accumulate_grad_batches = parameters.batch_size // datamodule.batch_size
+    checkpoint_path = parameters.checkpoint_path
 
     model = load_vae_from_checkpoint(checkpoint_path)
 
-    device = torch.device(vae_config.get("device", "cuda"))
+    device = torch.device(parameters.device)
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
 
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint directory {checkpoint_path} does not exist")
+    if not os.path.exists(parameters.output_dir):
+        os.makedirs(parameters.output_dir)
 
     checkpoint_callback = ModelCheckpoint(
         monitor="valid_loss",
-        dirpath=checkpoint_path,
+        dirpath=parameters.output_dir,
         filename="{step}-{valid_loss:.2f}",
         save_last=True,
         save_top_k=2,
@@ -318,20 +383,34 @@ def generate_latent_representations_dataset(
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
-    trainer = Trainer(
-        default_root_dir=os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), vae_config.get("training_name"), "training_logs"),
-        devices=device_count,
-        accelerator="gpu",
-        profiler="simple",
-        callbacks=[checkpoint_callback, lr_monitor],
-        enable_checkpointing=True,
-        max_epochs=vae_config.get("epochs", 100),
-        max_steps=vae_config.get("max_training_steps", 100000),
-        log_every_n_steps=max(100, min(25 * accumulate_grad_batches, 200)),
-        val_check_interval=max(500, min(300 * accumulate_grad_batches, 1000)),
+    trainer = L.Trainer(
+        max_steps=1000,
+        accelerator="gpu" if device_count > 0 else "cpu",
+        devices=min(device_count, 1) if device_count > 0 else "auto",
+        accumulate_grad_batches=accumulate_grad_batches,
+        val_check_interval=100,
+        log_every_n_steps=10,
         limit_val_batches=64,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=2,
+        callbacks=[checkpoint_callback, lr_monitor],
     )
 
-    predictions = trainer.predict(model, datamodule=datamodule)
-    return {"Message": "Generated Latent Representations"}
+    try:
+        predictions = trainer.predict(model, datamodule=datamodule)
+        
+        # Process and save predictions if requested
+        if parameters.save_latents or parameters.save_codes:
+            processed_predictions = []
+            for batch_predictions in predictions:
+                for prediction in batch_predictions:
+                    if isinstance(prediction, dict):
+                        processed_predictions.append(prediction)
+            
+            # Save predictions to the output directory
+            output_file = os.path.join(parameters.output_dir, "latent_representations.json")
+            with open(output_file, 'w') as f:
+                json.dump(processed_predictions, f, indent=2)
+        
+        return {"Message": f"Latent representation generation completed. {len(predictions)} batches processed."}
+    except Exception as e:
+        return {"Message": f"Latent representation generation failed: {str(e)}"}

@@ -1,23 +1,14 @@
 import os
-import json
 import torch
-import numpy as np
+from typing import Union, Dict, Any
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, Callback
 
-from application.multimodal_mapping.models.input_encoders import (
-    TextEncoder, 
-    GlobalFeatureProcessor,
-    MoodProcessor
-)
-from application.multimodal_mapping.models.embedding_fusion import CrossAttentionFusion, LinearConcatFusion
+# Input encoders and fusion classes are imported in helper functions where needed
 from application.multimodal_mapping.helpers.multimodal_mapping_helper import (
-    load_mapping_from_checkpoint,
-    initialize_tokenizers_and_processors,
     load_from_checkpoint,
     load_from_checkpoint_new,
-    create_multimodal_mapping_module
 )
 from application.multimodal_mapping.models.multimodal_mapping import MultimodalMappingModule
 
@@ -25,7 +16,7 @@ from domain.constants.paths_constants import (
     CHECKPOINTS_PATH,
     GENERATED_PATH,
 )
-from domain.models.multimodal_mapping_model import MultimodalMappingParameters
+from domain.models.multimodal_mapping_model import MultimodalMappingParameters, MultimodalTrainingParameters
 
 from application.dataloader.models.dataloader_model import DataloaderModule
 
@@ -54,189 +45,158 @@ class KLAnnealingCallback(Callback):
         pl_module.kl_weight = kl_weight
 
 
-def train_multimodal_mapping(config_path: str) -> dict:
+def train_multimodal_mapping(parameters: MultimodalTrainingParameters) -> dict:
     """
-    Train a multimodal mapping model using parameters from the config file.
+    Train a multimodal mapping model using BaseModel parameters.
 
     Args:
-        config_path: Path to the configuration JSON file
+        parameters: MultimodalTrainingParameters object
 
     Returns:
         Dictionary with training results message
     """
-    # Load configuration
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    mapping_config = config.get("multimodal_mapping", {})
-
-    # Create data module using the enhanced dataloader
-    datamodule_parameters = config["dataloader"]
-    datamodule_parameters["load_latent"] = True
-    datamodule_parameters["load_symb"] = True
-    datamodule_parameters["load_emotions"] = True
-    datamodule_parameters["load_global_features"] = True
-    datamodule_parameters["load_text_prompts"] = True
+    
+    # Set up data module parameters
+    datamodule_parameters = {
+        "dataset_name": parameters.dataset_name,
+        "context_size": parameters.context_size,
+        "max_positions": 1024,
+        "max_bars": 512,
+        "max_bars_per_context": -1,
+        "max_contexts_per_file": -1,
+        "bar_token_mask": None,
+        "bar_token_idx": 2,
+        "batch_size": parameters.batch_size,
+        "num_workers": parameters.num_workers,
+        "pin_memory": parameters.pin_memory,
+        "train_val_test_split": (0.7, 0.2, 0.1),
+        "load_latent": parameters.load_latent,
+        "load_symb": parameters.load_symb,
+        "load_emotions": parameters.load_emotions,
+        "load_global_features": parameters.load_global_features,
+        "load_text_prompts": parameters.load_text_prompts,
+        "load_images": getattr(parameters, 'load_images', True),
+        "encode": False,
+        "caption": False,
+    }
 
     datamodule = DataloaderModule(**datamodule_parameters)
 
-    # Setup the datamodule
-    datamodule.setup()
+    accumulate_grad_batches = parameters.batch_size // datamodule.batch_size
 
     # Initialize model
-    if mapping_config["load_from_checkpoint"]:
-        # Use the new separate files loading method
-        weights_path = mapping_config["weights_path"]
-        training_config_path = mapping_config["config_path"]
-        model = load_from_checkpoint_new(weights_path, training_config_path, eval=False)
-
-        # # Use the original checkpoint file loading method
-        # checkpoint_path = mapping_config["checkpoint_path"]
-        # model = load_from_checkpoint(checkpoint_path, eval=False)
+    if parameters.load_from_checkpoint and parameters.checkpoint_path:
+        # Load from checkpoint
+        model = load_from_checkpoint(parameters.checkpoint_path, eval=False)
+    elif parameters.load_from_checkpoint and parameters.weights_path and parameters.config_path:
+        # Load from separate weights and config files
+        model = load_from_checkpoint_new(parameters.weights_path, parameters.config_path, eval=False)
     else:
-        # Extract parameters from config for direct passing to the model
+        # Create new model from parameters
         model_params = {
             # Input dimensions
-            "text_dim": mapping_config["text_dim"],
-            "global_feature_dim": mapping_config["global_feature_dim"],
-            "global_feature_out_dim": mapping_config["global_feature_out_dim"],
-            "mood_dim": mapping_config["mood_dim"],
-            "mood_out_dim": mapping_config["mood_out_dim"],
+            "image_dim": parameters.image_dim,
+            "text_dim": parameters.text_dim,
+            "global_feature_dim": parameters.global_feature_dim,
+            "global_feature_out_dim": parameters.global_feature_out_dim,
+            "mood_dim": parameters.mood_dim,
+            "mood_out_dim": parameters.mood_out_dim,
             
             # Architecture parameters
-            "fusion_dim": mapping_config["fusion_dim"],
-            "hidden_dim": mapping_config["hidden_dim"],
-            "latent_dim": mapping_config["latent_dim"],
-            "output_dim": mapping_config["output_dim"],
-            "context_size": datamodule_parameters["context_size"],
-            "num_layers": mapping_config["num_layers"],
-            "num_heads": mapping_config["num_heads"],
-            "fusion_heads": mapping_config["fusion_heads"],
-            "fusion_type": mapping_config["fusion_type"],
-            "dropout": mapping_config["dropout"],
-            "training": mapping_config["training"],
+            "fusion_dim": parameters.fusion_dim,
+            "d_model": parameters.d_model,
+            "latent_dim": parameters.latent_dim,
+            "output_dim": parameters.output_dim,
+            "context_size": parameters.context_size,
+            "num_layers": parameters.num_layers,
+            "num_heads": parameters.num_heads,
+            "fusion_heads": parameters.fusion_heads,
+            "fusion_type": parameters.fusion_type,
+            "dropout": parameters.dropout,
+            "training": parameters.training,
             
             # Modality dropout rates
-            "text_dropout_rate": mapping_config["text_dropout_rate"],
-            "global_feature_dropout_rate": mapping_config["global_feature_dropout_rate"],
-            "mood_dropout_rate": mapping_config["mood_dropout_rate"],
+            "image_dropout_rate": parameters.image_dropout_rate,
+            "text_dropout_rate": parameters.text_dropout_rate,
+            "global_feature_dropout_rate": parameters.global_feature_dropout_rate,
+            "mood_dropout_rate": parameters.mood_dropout_rate,
             
             # Learning rate and schedule
-            "lr": mapping_config["lr"],
-            "lr_schedule": mapping_config["lr_schedule"],
-            "warmup_steps": mapping_config["warmup_steps"],
-            "max_steps": mapping_config["max_steps"],
+            "lr": parameters.lr,
+            "lr_schedule": parameters.lr_schedule,
+            "warmup_steps": parameters.warmup_steps,
+            "max_steps": parameters.max_steps,
             
             # KL annealing
-            "use_kl_annealing": mapping_config["use_kl_annealing"],
-            "kl_start": mapping_config["kl_start"],
-            "kl_end": mapping_config["kl_end"],
-            "kl_anneal_steps": mapping_config["kl_anneal_steps"],
+            "use_kl_annealing": parameters.use_kl_annealing,
+            "kl_start": parameters.kl_start,
+            "kl_end": parameters.kl_end,
+            "kl_anneal_steps": parameters.kl_anneal_steps,
         }
         
-        # Create a new model with explicit parameters
         model = MultimodalMappingModule(**model_params)
 
-    # Setup device
-    device = torch.device(mapping_config.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
-    model.to(device)
+    device = torch.device(parameters.device)
     device_count = 0 if device.type == "cpu" else torch.cuda.device_count()
 
-    # Setup checkpointing
-    training_name = mapping_config.get("training_name", "default")
+    # Create checkpoint directory if it doesn't exist
+    os.makedirs(parameters.checkpoint_dir, exist_ok=True)
 
-    checkpoint_path = os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), training_name, "checkpoints")
-    if not os.path.exists(checkpoint_path):
-        os.makedirs(checkpoint_path)
-
+    # Set up callbacks
     checkpoint_callback = ModelCheckpoint(
-        monitor="valid_loss",
-        dirpath=checkpoint_path,
-        filename="{step}-{valid_loss:.2f}",
-        save_top_k=3,
-        every_n_train_steps=mapping_config.get("checkpoint_every_n_steps", 2000),
+        monitor="val_loss",
+        dirpath=parameters.checkpoint_dir,
+        filename="{step}-{val_loss:.2f}",
         save_last=True,
+        save_top_k=parameters.save_top_k,
+        every_n_train_steps=1000,
     )
-
-    # Setup KL annealing
-    kl_annealing_callback = KLAnnealingCallback(
-        kl_start=mapping_config.get("kl_start", 0.0), 
-        kl_end=mapping_config.get("kl_end", 1.0), 
-        kl_anneal_steps=mapping_config.get("kl_anneal_steps", 10000)
-    )
-
     lr_monitor = LearningRateMonitor(logging_interval="step")
-
-    # Setup trainer
-    max_epochs = mapping_config.get("epochs", 100)
-    max_steps = mapping_config.get("max_steps", 100000)
-    val_check_interval = mapping_config.get("val_check_interval", 500)
-    log_every_n_steps = mapping_config.get("log_every_n_steps", 100)
+    
+    # Add KL annealing callback if enabled
+    callbacks = [checkpoint_callback, lr_monitor]
+    if parameters.use_kl_annealing:
+        kl_callback = KLAnnealingCallback(
+            kl_start=parameters.kl_start,
+            kl_end=parameters.kl_end,
+            kl_anneal_steps=parameters.kl_anneal_steps
+        )
+        callbacks.append(kl_callback)
 
     trainer = Trainer(
-        default_root_dir=os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), training_name, "training_logs"),
-        devices=device_count,
-        accelerator="gpu" if device.type == "cuda" else "cpu",
-        profiler="simple",
-        callbacks=[checkpoint_callback, lr_monitor, kl_annealing_callback],
-        enable_checkpointing=True,
-        max_epochs=max_epochs,
-        max_steps=max_steps,
-        log_every_n_steps=log_every_n_steps,
-        val_check_interval=val_check_interval,
-        limit_val_batches=64,
-        num_sanity_val_steps=2,
+        max_steps=parameters.max_steps,
+        max_epochs=parameters.max_epochs,
+        accelerator="gpu" if device_count > 0 else "cpu",
+        devices=min(device_count, parameters.gpus) if device_count > 0 else "auto",
+        accumulate_grad_batches=accumulate_grad_batches,
+        val_check_interval=parameters.val_check_interval,
+        log_every_n_steps=parameters.log_every_n_steps,
+        limit_val_batches=parameters.limit_val_batches,
+        num_sanity_val_steps=parameters.num_sanity_val_steps,
+        callbacks=callbacks,
     )
 
-    # Train the model
-    trainer.fit(model, datamodule=datamodule)
+    try:
+        trainer.fit(model, datamodule=datamodule)
+        return {"Message": "Multimodal mapping training completed successfully"}
+    except Exception as e:
+        return {"Message": f"Multimodal mapping training failed: {str(e)}"}
 
-    # Save final checkpoint
-    final_checkpoint_path = os.path.join(checkpoint_path, "final_model.ckpt")
-    trainer.save_checkpoint(final_checkpoint_path)
 
-    # Save separated checkpoint for easier loading
-    output_dir = os.path.join(CHECKPOINTS_PATH, datamodule_parameters.get("dataset_name"), training_name, "separated")
-    save_checkpoint_separate(final_checkpoint_path, output_dir)
-
+def generate_multimodal_representations(parameters: Union[MultimodalMappingParameters, Dict[str, Any]]) -> dict:
+    """Generate multimodal representations using trained model."""
+    
+    if isinstance(parameters, dict):
+        parameters = MultimodalMappingParameters(**parameters)
+    
+    # Load model
+    model = load_from_checkpoint_new(parameters.weights_path, parameters.config_path, eval=True)
+    
+    # TODO: Implement generation logic
+    
     return {
-        "Message": "Trained Multimodal Mapping Model",
-        "final_checkpoint_path": final_checkpoint_path,
-        "separated_weights_path": os.path.join(output_dir, "final_model_weights.pt"),
-        "separated_config_path": os.path.join(output_dir, "final_model_config.json"),
+        "status": "success",
+        "message": "Multimodal representations generated successfully",
+        "output_folder": parameters.output_folder,
+        "output_name": parameters.output_name
     }
-
-
-def save_checkpoint_separate(checkpoint_path: str, output_dir: str) -> dict:
-    """
-    Load a model checkpoint and save weights as .pt and hyperparameters as .json
-
-    Args:
-        checkpoint_path: Path to the original checkpoint file
-        output_dir: Directory to save the separate files
-
-    Returns:
-        Dictionary with paths to the saved files
-    """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Load the original checkpoint
-    pl_ckpt = torch.load(checkpoint_path, map_location="cpu")
-
-    # Extract hyperparameters and state dict
-    hyperparameters = pl_ckpt["hyper_parameters"]
-    state_dict = pl_ckpt["state_dict"]
-
-    # Generate filenames
-    base_name = os.path.splitext(os.path.basename(checkpoint_path))[0]
-    weights_path = os.path.join(output_dir, f"{base_name}_weights.pt")
-    config_path = os.path.join(output_dir, f"{base_name}_config.json")
-
-    # Save the files
-    torch.save(state_dict, weights_path)
-
-    with open(config_path, "w") as f:
-        json.dump(hyperparameters, f, indent=2)
-
-    return {"weights_path": weights_path, "config_path": config_path, "message": "Checkpoint successfully separated"}

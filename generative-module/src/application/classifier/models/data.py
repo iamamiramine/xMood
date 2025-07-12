@@ -9,9 +9,11 @@ import pickle
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
+from domain.constants.model_constants import ModelConstants
+
 
 class PEmo_Dataset(Dataset):
-    def __init__(self, feature_path, labels, split, cls_type, pad_idx, csv_path=None, max_context_size=512):
+    def __init__(self, feature_path, labels, split, cls_type, pad_idx, csv_path=None, context_size=512):
         self.pt_dir = feature_path
         self.labels = labels
         self.split = split
@@ -19,20 +21,10 @@ class PEmo_Dataset(Dataset):
         self.get_fl()
         self.cls_type = cls_type
         self.pad_idx = pad_idx
-        self.max_context_size = max_context_size  # Maximum sequence length to keep
+        self.context_size = context_size  # Maximum sequence length to keep
 
         # Mood names mapping for consistent ordering
-        self.mood_names = [
-            "HAPPY_KEY",
-            "DRAMATIC_KEY",
-            "RELAXING_KEY",
-            "LOVE_KEY",
-            "DARK_KEY",
-            "CHRISTMAS_KEY",
-            "ENERGETIC_KEY",
-            "MEDITATIVE_KEY",
-            "MOTIVATIONAL_KEY",
-        ]
+        self.mood_names = ModelConstants.MOOD_NAMES
 
         # Create mapping from mood name to index
         self.mood_to_idx = {mood: idx for idx, mood in enumerate(self.mood_names)}
@@ -121,8 +113,8 @@ class PEmo_Dataset(Dataset):
             processed_midi = torch.zeros(1, dtype=torch.long)  # Create minimal placeholder tensor
 
         # Limit context size if specified
-        if self.max_context_size:
-            processed_midi = processed_midi[: self.max_context_size]
+        if self.context_size:
+            processed_midi = processed_midi[: self.context_size]
 
         return processed_midi, labels, audio_fname
 

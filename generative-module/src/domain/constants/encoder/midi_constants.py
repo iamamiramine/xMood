@@ -1,17 +1,91 @@
 import os
 import json
 import numpy as np
+import logging
+from typing import Dict, Any, Tuple
+
+logger = logging.getLogger(__name__)
 
 
-# Load config file
-def load_midi_config():
+def load_midi_config() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Load MIDI configuration from config file with proper error handling.
+    
+    Returns:
+        Tuple of (midi_config, datamodule_config) dictionaries
+        
+    Raises:
+        FileNotFoundError: If the configuration file doesn't exist
+        json.JSONDecodeError: If the configuration file contains invalid JSON
+        Exception: For other configuration loading errors
+    """
     config_path = os.path.join("shared", "config", "config.json")
-    with open(config_path, "r") as f:
-        config = json.load(f)
-    return config.get("midi", {}), config.get("dataloader", {})
+    
+    try:
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Configuration file not found at: {config_path}")
+        
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        
+        if not isinstance(config, dict):
+            raise ValueError(f"Configuration file must contain a JSON object, got {type(config)}")
+        
+        midi_config = config.get("midi", {})
+        datamodule_config = config.get("dataloader", {})
+        
+        logger.info(f"Successfully loaded MIDI configuration from {config_path}")
+        return midi_config, datamodule_config
+        
+    except FileNotFoundError as e:
+        logger.error(f"MIDI configuration file not found: {e}")
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in MIDI configuration file at {config_path}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error loading MIDI configuration from {config_path}: {e}")
+        raise
 
 
-midi_config, datamodule_config = load_midi_config()
+def get_midi_config_safe() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Load MIDI configuration with fallback values.
+    
+    Returns:
+        Tuple of (midi_config, datamodule_config) dictionaries with fallback values
+    """
+    try:
+        return load_midi_config()
+    except FileNotFoundError:
+        logger.warning("MIDI configuration file not found, using default values")
+        return {
+            "pos_per_quarter": 12,
+            "resolution": 480,
+            "max_bar_length": 3,
+        }, {
+            "max_bars": 512,
+        }
+    except Exception as e:
+        logger.error(f"Failed to load MIDI configuration: {e}")
+        # Return minimal fallback configuration
+        return {
+            "pos_per_quarter": 12,
+            "resolution": 480,
+            "max_bar_length": 3,
+        }, {
+            "max_bars": 512,
+        }
+
+
+# Load configurations with proper error handling
+try:
+    midi_config, datamodule_config = get_midi_config_safe()
+except Exception as e:
+    logger.critical(f"Critical error loading MIDI configuration: {e}")
+    # Set minimal fallback values to prevent import errors
+    midi_config = {"pos_per_quarter": 12, "resolution": 480, "max_bar_length": 3}
+    datamodule_config = {"max_bars": 512}
 
 # parameters for input representation
 DEFAULT_POS_PER_QUARTER = midi_config.get("pos_per_quarter", 12)

@@ -1,5 +1,6 @@
 import torch
 from transformers import DistilBertTokenizer
+import clip
 
 import json
 from application.multimodal_mapping.models.input_encoders import TextEncoder, StructuredFeatureProcessor, GlobalFeatureProcessor, MoodProcessor
@@ -10,17 +11,21 @@ from application.encoder.models.vocab_model import SymbolicFeaturesVocab, MoodsV
 
 def initialize_tokenizers_and_processors():
     """
-    Initialize tokenizers and processors for text inputs.
+    Initialize tokenizers and processors for text and image inputs.
 
     Returns:
-        tuple: (text_tokenizer, None)
+        tuple: (text_tokenizer, image_processor)
     """
 
     # Text tokenizer
     text_tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
-    # Return only text tokenizer, with None for image processor
-    return text_tokenizer, None
+    # Image processor from CLIP
+    # We load the model to get the processor, but won't use the model itself here.
+    # The processor handles transformations like resize, center crop, and normalization.
+    _, image_processor = clip.load("ViT-B/32", device="cpu")
+
+    return text_tokenizer, image_processor
 
 
 def load_from_checkpoint(checkpoint_path: str, eval=True):

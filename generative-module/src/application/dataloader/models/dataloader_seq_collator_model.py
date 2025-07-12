@@ -1,9 +1,10 @@
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from domain.constants.model_constants import ModelConstants
 
 
 class SeqCollator:
-    def __init__(self, pad_token=0, context_size=512, device=None):
+    def __init__(self, pad_token=ModelConstants.PAD_TOKEN_ID, context_size=ModelConstants.DEFAULT_CONTEXT_SIZE, device=None):
         self.pad_token = pad_token
         self.context_size = context_size
         self.device = device

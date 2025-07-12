@@ -19,6 +19,7 @@ from application.dataloader.helper.dataloader_helper import (
 from application.dataloader.models.dataloader_seq_collator_model import SeqCollator
 from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab, MoodsVocab
 from domain.constants.encoder.token_constants import PAD_TOKEN
+from domain.constants.model_constants import ModelConstants
 from domain.constants.paths_constants import (
     MIDI_PATH,
     PROCESSED_PATH,
@@ -151,7 +152,7 @@ class DataloaderModule(LightningDataModule):
         self.predict_ds = DataloaderDataset(predict_files, **self.dataset_parameters)
 
         self.train_ds = IterableWrapper(self.train_ds)
-        self.train_ds.shuffle(buffer_size=2048)
+        self.train_ds.shuffle(buffer_size=ModelConstants.DEFAULT_BUFFER_SIZE)
 
         if self.encode:
             self.collator = None
