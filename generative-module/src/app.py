@@ -9,7 +9,6 @@ from api.controllers import (
     health_controller,
     feature_extraction_controller,
     generator_controller,
-    classifier_controller,
     pipeline_config_controller,
     job_monitoring_controller,
     pipeline_job_controller,
@@ -122,10 +121,6 @@ tags_metadata = [
         "description": "Generator",
     },
     {
-        "name": "classifier",
-        "description": "MIDI Mood Classification",
-    },
-    {
         "name": "Pipeline Configuration",
         "description": "Unified configuration management for all services",
     },
@@ -176,12 +171,6 @@ app.include_router(
     generator_controller.router,
     prefix="/generator",
     tags=["generator"],
-    responses={404: {"description": "Not found"}},
-)
-app.include_router(
-    classifier_controller.router,
-    prefix="/classifier",
-    tags=["classifier"],
     responses={404: {"description": "Not found"}},
 )
 app.include_router(

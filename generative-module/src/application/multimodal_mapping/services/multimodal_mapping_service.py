@@ -60,24 +60,24 @@ def train_multimodal_mapping(parameters: MultimodalTrainingParameters) -> dict:
     datamodule_parameters = {
         "dataset_name": parameters.dataset_name,
         "context_size": parameters.context_size,
-        "max_positions": 1024,
-        "max_bars": 512,
-        "max_bars_per_context": -1,
-        "max_contexts_per_file": -1,
-        "bar_token_mask": None,
-        "bar_token_idx": 2,
+        "max_positions": parameters.max_positions,
+        "max_bars": parameters.max_bars,
+        "max_bars_per_context": parameters.max_bars_per_context,
+        "max_contexts_per_file": parameters.max_contexts_per_file,
+        "bar_token_mask": parameters.bar_token_mask,
+        "bar_token_idx": parameters.bar_token_idx,
         "batch_size": parameters.batch_size,
         "num_workers": parameters.num_workers,
         "pin_memory": parameters.pin_memory,
-        "train_val_test_split": (0.7, 0.2, 0.1),
+        "train_val_test_split": parameters.train_val_test_split,
         "load_latent": parameters.load_latent,
         "load_symb": parameters.load_symb,
         "load_emotions": parameters.load_emotions,
         "load_global_features": parameters.load_global_features,
         "load_text_prompts": parameters.load_text_prompts,
-        "load_images": getattr(parameters, 'load_images', True),
-        "encode": False,
-        "caption": False,
+        "load_images": parameters.load_images,
+        "encode": parameters.encode,
+        "caption": parameters.caption,
     }
 
     datamodule = DataloaderModule(**datamodule_parameters)
@@ -149,7 +149,7 @@ def train_multimodal_mapping(parameters: MultimodalTrainingParameters) -> dict:
         filename="{step}-{val_loss:.2f}",
         save_last=True,
         save_top_k=parameters.save_top_k,
-        every_n_train_steps=1000,
+        every_n_train_steps=parameters.every_n_train_steps,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
     

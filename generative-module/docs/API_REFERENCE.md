@@ -26,7 +26,7 @@ class IConfigService:
             Configuration dictionary
             
         Raises:
-            ConfigurationError: If configuration is invalid
+            ConfigurationException: If configuration is invalid
             FileNotFoundError: If configuration file not found
         """
         pass
@@ -43,7 +43,7 @@ class IConfigService:
             Service configuration dictionary
             
         Raises:
-            ConfigurationError: If service not found in configuration
+            ConfigurationException: If service not found in configuration
         """
         pass
 ```
@@ -165,7 +165,7 @@ class IPipelineConfigService:
             Validated pipeline configuration
             
         Raises:
-            ConfigurationError: If configuration is invalid
+            ConfigurationException: If configuration is invalid
         """
         pass
     
@@ -192,7 +192,7 @@ class IPipelineConfigService:
             True if configuration is valid
             
         Raises:
-            ConfigurationError: If configuration is invalid
+            ConfigurationException: If configuration is invalid
         """
         pass
     
@@ -865,7 +865,7 @@ class ServiceException(Exception):
     """Base exception for all service errors."""
     pass
 
-class ConfigurationError(ServiceException):
+class ConfigurationException(ServiceException):
     """Configuration-related errors."""
     pass
 

@@ -14,24 +14,141 @@ import logging
 import inspect
 from dataclasses import dataclass
 
-from .service_registry import ServiceRegistry, ServiceScope, get_service_registry
+from .service_registry import EnhancedServiceRegistry, ServiceScope, get_enhanced_service_registry
 from .service_interfaces import (
-    IClassifierService,
     IEncoderService,
     IFeatureExtractionService,
     IGeneratorService,
     IMultimodalMappingService,
     IMusicBaseService,
     IDataloaderService,
-    IPseudoLabellerService,
     IConfigService,
     IJobManagementService,
     IPipelineConfigService,
 )
 
+# Import service adapters
+from application.shared.adapters.config_adapter import ConfigServiceAdapter
+from application.shared.adapters.job_management_adapter import JobManagementServiceAdapter
+from application.shared.adapters.pipeline_config_adapter import PipelineConfigServiceAdapter
+from application.shared.adapters.encoder_adapter import EncoderServiceAdapter
+from application.shared.adapters.feature_extraction_adapter import FeatureExtractionServiceAdapter
+from application.shared.adapters.generator_adapter import GeneratorServiceAdapter
+from application.shared.adapters.multimodal_mapping_adapter import MultimodalMappingServiceAdapter
+from application.shared.adapters.music_base_adapter import MusicBaseServiceAdapter
+from application.shared.adapters.dataloader_adapter import DataloaderServiceAdapter
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+
+
+class ServiceRegistryAdapter:
+    """
+    Adapter to bridge DependencyContainer API with EnhancedServiceRegistry API.
+    
+    This adapter translates Type-based service keys to string-based service names
+    and provides the interface that DependencyContainer expects.
+    """
+    
+    def __init__(self, enhanced_registry: EnhancedServiceRegistry):
+        self._enhanced_registry = enhanced_registry
+        self._type_to_name: Dict[Type, str] = {}
+        self._name_to_type: Dict[str, Type] = {}
+    
+    def register(self, service_type: Type, implementation: Any = None, 
+                 scope: ServiceScope = ServiceScope.SINGLETON, 
+                 dependencies: List[Type] = None) -> None:
+        """Register a service with type-based key."""
+        service_name = self._get_service_name(service_type)
+        
+        # Convert dependency types to names
+        dependency_names = []
+        if dependencies:
+            dependency_names = [self._get_service_name(dep) for dep in dependencies]
+        
+        self._enhanced_registry.register_service(
+            service_name=service_name,
+            service_type=service_type,
+            implementation=implementation,
+            scope=scope,
+            dependencies=dependency_names
+        )
+    
+    def register_instance(self, service_type: Type, instance: Any) -> None:
+        """Register a service instance."""
+        service_name = self._get_service_name(service_type)
+        self._enhanced_registry.register_service(
+            service_name=service_name,
+            service_type=service_type,
+            implementation=instance,
+            scope=ServiceScope.SINGLETON
+        )
+    
+    def register_factory(self, service_type: Type, factory: Callable, 
+                        scope: ServiceScope = ServiceScope.SINGLETON) -> None:
+        """Register a service factory."""
+        service_name = self._get_service_name(service_type)
+        self._enhanced_registry.register_service(
+            service_name=service_name,
+            service_type=service_type,
+            factory=factory,
+            scope=scope
+        )
+    
+    def get_service(self, service_type: Type) -> Any:
+        """Get service by type."""
+        service_name = self._get_service_name(service_type)
+        return self._enhanced_registry.get_service(service_name)
+    
+    def is_registered(self, service_type: Type) -> bool:
+        """Check if service is registered."""
+        service_name = self._get_service_name(service_type)
+        return service_name in self._enhanced_registry._services
+    
+    def get_registration_info(self, service_type: Type) -> Optional[Any]:
+        """Get registration info for a service."""
+        service_name = self._get_service_name(service_type)
+        if service_name in self._enhanced_registry._services:
+            registration = self._enhanced_registry._services[service_name]
+            # Return an object with the expected attributes
+            class RegistrationInfo:
+                def __init__(self, reg):
+                    self.scope = reg.scope
+                    self.dependencies = [self._name_to_type.get(dep, dep) for dep in reg.dependencies]
+                    self.service_type = reg.service_type
+                    self.implementation = reg.implementation
+                    self.factory = reg.factory
+            return RegistrationInfo(registration)
+        return None
+    
+    def _get_service_name(self, service_type: Type) -> str:
+        """Convert service type to service name using standard naming convention."""
+        if service_type not in self._type_to_name:
+            # Map interface types to their standard service names
+            type_to_name_mapping = {
+                'IConfigService': 'config_service',
+                'IJobManagementService': 'job_management_service',
+                'IPipelineConfigService': 'pipeline_config_service',
+                'IEncoderService': 'encoder_service',
+                'IFeatureExtractionService': 'feature_extraction_service',
+                'IGeneratorService': 'generator_service',
+                'IMultimodalMappingService': 'multimodal_mapping_service',
+                'IMusicBaseService': 'music_base_service',
+                'IDataloaderService': 'dataloader_service'
+            }
+            
+            type_name = service_type.__name__
+            if type_name in type_to_name_mapping:
+                service_name = type_to_name_mapping[type_name]
+            else:
+                # Fallback: convert IServiceName to service_name
+                service_name = type_name.lower().replace('i', '', 1) if type_name.startswith('I') else type_name.lower()
+                service_name = service_name + '_service' if not service_name.endswith('service') else service_name
+            
+            self._type_to_name[service_type] = service_name
+            self._name_to_type[service_name] = service_type
+        return self._type_to_name[service_type]
 
 
 @dataclass
@@ -102,8 +219,9 @@ class DependencyContainer(IDependencyContainer):
     - Performance tracking
     """
     
-    def __init__(self, registry: Optional[ServiceRegistry] = None):
-        self._registry = registry or get_service_registry()
+    def __init__(self, registry: Optional[EnhancedServiceRegistry] = None):
+        self._enhanced_registry = registry or get_enhanced_service_registry()
+        self._registry = ServiceRegistryAdapter(self._enhanced_registry)
         self._scoped_instances: Dict[Type, Any] = {}
         self._resolution_stack: Set[Type] = set()
         self._resolution_history: List[DependencyResolution] = []
@@ -231,7 +349,7 @@ class DependencyContainer(IDependencyContainer):
         Returns:
             New scoped dependency container
         """
-        scoped_container = DependencyContainer(self._registry)
+        scoped_container = DependencyContainer(self._enhanced_registry)
         scoped_container._parent_container = self
         return scoped_container
     
@@ -291,14 +409,12 @@ class DependencyContainer(IDependencyContainer):
     def _is_service_interface(self, annotation: Type) -> bool:
         """Check if a type annotation is a service interface."""
         service_interfaces = [
-            IClassifierService,
             IEncoderService,
             IFeatureExtractionService,
             IGeneratorService,
             IMultimodalMappingService,
             IMusicBaseService,
             IDataloaderService,
-            IPseudoLabellerService,
             IConfigService,
             IJobManagementService,
             IPipelineConfigService,
@@ -338,19 +454,28 @@ def get_dependency_container() -> DependencyContainer:
     return _global_container
 
 
+def initialize_dependency_container() -> DependencyContainer:
+    """
+    Initialize the dependency container.
+    
+    Note: Services are configured via service_initialization.py to avoid
+    duplicate registrations between the dependency container and enhanced registry.
+    """
+    container = get_dependency_container()
+    logger.info("Dependency container initialized - services will be resolved from enhanced registry")
+    return container
+
+
 def configure_services(container: DependencyContainer) -> None:
-    """Configure services in the dependency container."""
-    # This function can be used to register services when implementations are ready
+    """
+    Configure services in the dependency container.
     
-    logger.info("Configuring services in dependency container")
-    
-    # Example service registrations (to be uncommented when implementations are ready):
-    # container.register(IConfigService, ConfigService, ServiceScope.SINGLETON)
-    # container.register(IJobManagementService, JobManagementService, ServiceScope.SINGLETON)
-    # container.register(IPipelineConfigService, PipelineConfigService, ServiceScope.SINGLETON)
-    
-    # Register service factories for more complex initialization
-    # container.register_factory(IClassifierService, lambda: ClassifierService(), ServiceScope.SINGLETON)
+    Note: This function is now deprecated in favor of the centralized 
+    service initialization in service_initialization.py to avoid
+    duplicate registrations.
+    """
+    logger.info("Service configuration is now handled by service_initialization.py")
+    logger.info("Dependency container will automatically resolve services from enhanced registry")
 
 
 def inject_dependencies(func: Callable) -> Callable:

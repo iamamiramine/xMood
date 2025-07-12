@@ -29,16 +29,3 @@ def parse_job_priority(priority_str: str) -> JobPriority:
         raise ValueError(f"Invalid priority: {priority_str}. Valid values: {list(priority_map.keys())}")
     
     return priority_map[priority_str.lower()]
-
-
-def validate_parameters_defaults(parameters: Any, defaults: Dict[str, Any]) -> None:
-    """
-    Apply default values to parameters if they are missing or None.
-    
-    Args:
-        parameters: Parameter object to validate and set defaults
-        defaults: Dictionary of default values to apply
-    """
-    for key, default_value in defaults.items():
-        if not hasattr(parameters, key) or getattr(parameters, key) is None:
-            setattr(parameters, key, default_value) 

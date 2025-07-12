@@ -1,7 +1,0 @@
-fastapi[all]
-requests
-
-pretty_midi
-muspy
-
-pandas

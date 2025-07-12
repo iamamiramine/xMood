@@ -28,6 +28,7 @@ plotly
 
 # Other
 pyntcloud
+PyYAML
 
 # Processing
 numba

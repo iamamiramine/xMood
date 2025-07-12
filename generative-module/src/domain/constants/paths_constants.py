@@ -1,4 +1,4 @@
-import json
+import yaml
 import os
 import logging
 from typing import Dict, Any
@@ -6,12 +6,12 @@ from typing import Dict, Any
 logger = logging.getLogger(__name__)
 
 
-def load_config_file(file_path: str, description: str) -> Dict[str, Any]:
+def load_yaml_config_file(file_path: str, description: str) -> Dict[str, Any]:
     """
-    Load and parse a JSON configuration file with proper error handling.
+    Load and parse a YAML configuration file with proper error handling.
     
     Args:
-        file_path: Path to the JSON configuration file
+        file_path: Path to the YAML configuration file
         description: Human-readable description of the configuration file
         
     Returns:
@@ -19,7 +19,7 @@ def load_config_file(file_path: str, description: str) -> Dict[str, Any]:
         
     Raises:
         FileNotFoundError: If the configuration file doesn't exist
-        json.JSONDecodeError: If the configuration file contains invalid JSON
+        yaml.YAMLError: If the configuration file contains invalid YAML
         Exception: For other configuration loading errors
     """
     try:
@@ -27,10 +27,10 @@ def load_config_file(file_path: str, description: str) -> Dict[str, Any]:
             raise FileNotFoundError(f"{description} file not found at: {file_path}")
         
         with open(file_path, 'r', encoding='utf-8') as file:
-            config_data = json.load(file)
+            config_data = yaml.safe_load(file)
         
         if not isinstance(config_data, dict):
-            raise ValueError(f"{description} file must contain a JSON object, got {type(config_data)}")
+            raise ValueError(f"{description} file must contain a YAML object, got {type(config_data)}")
         
         logger.info(f"Successfully loaded {description} from {file_path}")
         return config_data
@@ -38,8 +38,8 @@ def load_config_file(file_path: str, description: str) -> Dict[str, Any]:
     except FileNotFoundError as e:
         logger.error(f"Configuration file not found: {e}")
         raise
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in {description} file at {file_path}: {e}")
+    except yaml.YAMLError as e:
+        logger.error(f"Invalid YAML in {description} file at {file_path}: {e}")
         raise
     except Exception as e:
         logger.error(f"Error loading {description} from {file_path}: {e}")
@@ -47,17 +47,19 @@ def load_config_file(file_path: str, description: str) -> Dict[str, Any]:
 
 
 def get_paths_config() -> Dict[str, Any]:
-    """Get paths configuration with fallback values."""
-    paths_file = os.path.join("shared", "config", "paths.json")
+    """Get paths configuration from YAML with fallback values."""
+    config_file = os.path.join("shared", "config", "unified_config.yaml")
     
     try:
-        return load_config_file(paths_file, "paths configuration")
+        config = load_yaml_config_file(config_file, "unified configuration")
+        return config.get("paths", {})
     except FileNotFoundError:
         # Fallback to default paths
-        logger.warning(f"Paths configuration file not found, using default values")
+        logger.warning(f"Unified configuration file not found, using default values")
         return {
             "ROOT_OUTPUT": "output",
             "DATASETS_PATH": "datasets",
+            "DATASET_NAME": "EMOPIA",
         }
     except Exception as e:
         logger.error(f"Failed to load paths configuration: {e}")
@@ -65,20 +67,22 @@ def get_paths_config() -> Dict[str, Any]:
         return {
             "ROOT_OUTPUT": "output",
             "DATASETS_PATH": "datasets",
+            "DATASET_NAME": "EMOPIA",
         }
 
 
 def get_main_config() -> Dict[str, Any]:
-    """Get main configuration with fallback values."""
-    config_file = os.path.join("shared", "config", "config.json")
+    """Get main configuration from YAML with fallback values."""
+    config_file = os.path.join("shared", "config", "unified_config.yaml")
     
     try:
-        return load_config_file(config_file, "main configuration")
+        config = load_yaml_config_file(config_file, "unified configuration")
+        return config
     except FileNotFoundError:
         # Fallback to default config
-        logger.warning(f"Main configuration file not found, using default values")
+        logger.warning(f"Unified configuration file not found, using default values")
         return {
-            "dataloader": {
+            "data": {
                 "dataset_name": "EMOPIA",
                 "max_bars": 512,
             }
@@ -87,7 +91,7 @@ def get_main_config() -> Dict[str, Any]:
         logger.error(f"Failed to load main configuration: {e}")
         # Return minimal fallback configuration
         return {
-            "dataloader": {
+            "data": {
                 "dataset_name": "EMOPIA",
                 "max_bars": 512,
             }
@@ -101,8 +105,8 @@ try:
 except Exception as e:
     logger.critical(f"Critical error loading configuration: {e}")
     # Set minimal fallback values to prevent import errors
-    paths = {"ROOT_OUTPUT": "output", "DATASETS_PATH": "datasets"}
-    config = {"dataloader": {"dataset_name": "EMOPIA", "max_bars": 512}}
+    paths = {"ROOT_OUTPUT": "output", "DATASETS_PATH": "datasets", "DATASET_NAME": "EMOPIA"}
+    config = {"data": {"dataset_name": "EMOPIA", "max_bars": 512}}
 
 def get_config_value(config_dict: Dict[str, Any], key_path: str, default_value: Any = None) -> Any:
     """
@@ -131,7 +135,7 @@ def get_config_value(config_dict: Dict[str, Any], key_path: str, default_value: 
 ROOT_OUTPUT = get_config_value(paths, "ROOT_OUTPUT", "output")
 DATASETS_PATH = get_config_value(paths, "DATASETS_PATH", "datasets")
 
-DATASET_NAME = get_config_value(config, "dataloader.dataset_name", "EMOPIA")
+DATASET_NAME = get_config_value(paths, "DATASET_NAME", "EMOPIA")
 
 # Construct paths using safe configuration values
 MIDI_PATH = f"{DATASETS_PATH}/{DATASET_NAME}/midi/"

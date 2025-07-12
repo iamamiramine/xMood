@@ -4,49 +4,18 @@ import os
 
 from application.pipeline_config.services.pipeline_config_service import (
     pipeline_config_service,
-    generate_unified_config,
-    migrate_json_to_yaml,
-    validate_unified_config,
     get_service_config_template,
     list_available_services,
-    standardize_parameter_names
 )
-from application.shared.helpers.error_handlers import (
+from handlers.exception_handler import (
     handle_error_with_fallback,
     create_success_response,
 )
-from domain.exceptions.global_exceptions import ConfigurationError
+from domain.exceptions.global_exceptions import ConfigurationException
 from domain.models.api.pipeline_config_models import (
     PipelineConfigGenerateRequest,
     PipelineConfigUpdateRequest,
-    UnifiedConfigGenerateRequest,
-    ConfigMigrationRequest,
-    ConfigValidationRequest,
-    ConfigStandardizationRequest,
 )
-
-
-
-
-class ConfigValidationResponse(BaseModel):
-    valid: bool
-    message: str
-    config_path: str
-    services: Optional[List[str]] = None
-
-
-class ConfigGenerationResponse(BaseModel):
-    success: bool
-    message: str
-    output_path: str
-    services_included: List[str]
-    environment: str
-
-
-class ServiceTemplateResponse(BaseModel):
-    service_name: str
-    template: Dict[str, Any]
-
 
 # Router
 router = APIRouter(prefix="/pipeline-config", tags=["Pipeline Configuration"])
@@ -122,7 +91,7 @@ async def get_pipeline_job(job_id: str) -> Dict[str, Any]:
             "job_id": job_id,
             "config": config
         }
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get pipeline job: {str(e)}")
@@ -151,7 +120,7 @@ async def update_pipeline_job_status(job_id: str, request: PipelineConfigUpdateR
             "message": f"Pipeline job {job_id} status updated to {request.status}",
             "job_info": job_info
         }
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update pipeline job status: {str(e)}")
@@ -171,7 +140,7 @@ async def delete_pipeline_job(job_id: str) -> Dict[str, Any]:
     try:
         result = pipeline_config_service.delete_pipeline_job(job_id)
         return result
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete pipeline job: {str(e)}")
@@ -197,85 +166,10 @@ async def get_service_config_from_pipeline(job_id: str, service_name: str) -> Di
             "service_name": service_name,
             "config": service_config
         }
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get service config: {str(e)}")
-
-
-# Legacy unified config methods (kept for backward compatibility)
-@router.post("/unified/generate", response_model=Dict[str, Any])
-async def generate_unified_config_legacy(request: UnifiedConfigGenerateRequest) -> Dict[str, Any]:
-    """
-    Generate a unified YAML configuration file for all services (legacy method).
-    
-    Args:
-        request: Unified configuration generation request
-        
-    Returns:
-        Generated unified configuration
-    """
-    try:
-        config = generate_unified_config(
-            output_path=request.output_path,
-            environment=request.environment,
-            services=request.services,
-            overrides=request.overrides
-        )
-        return {
-            "status": "success",
-            "message": "Unified configuration generated successfully",
-            "output_path": request.output_path,
-            "config": config
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate unified config: {str(e)}")
-
-
-@router.post("/migrate", response_model=Dict[str, Any])
-async def migrate_json_to_yaml_config(request: ConfigMigrationRequest) -> Dict[str, Any]:
-    """
-    Migrate existing JSON configuration to unified YAML format.
-    
-    Args:
-        request: Configuration migration request
-        
-    Returns:
-        Migrated configuration
-    """
-    try:
-        config = migrate_json_to_yaml(
-            json_config_path=request.json_config_path,
-            yaml_output_path=request.yaml_output_path,
-            apply_standardization=request.apply_standardization
-        )
-        return {
-            "status": "success",
-            "message": "Configuration migrated successfully",
-            "input_path": request.json_config_path,
-            "output_path": request.yaml_output_path,
-            "config": config
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to migrate configuration: {str(e)}")
-
-
-@router.post("/validate", response_model=Dict[str, Any])
-async def validate_config(request: ConfigValidationRequest) -> Dict[str, Any]:
-    """
-    Validate a unified configuration file.
-    
-    Args:
-        request: Configuration validation request
-        
-    Returns:
-        Validation results
-    """
-    try:
-        result = validate_unified_config(request.config_path)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to validate configuration: {str(e)}")
 
 
 @router.get("/services", response_model=List[str])
@@ -311,32 +205,10 @@ async def get_service_template(service_name: str) -> Dict[str, Any]:
             "service_name": service_name,
             "template": template
         }
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get service template: {str(e)}")
-
-
-@router.post("/standardize", response_model=Dict[str, Any])
-async def standardize_config_parameters(request: ConfigStandardizationRequest) -> Dict[str, Any]:
-    """
-    Apply parameter name standardization to configuration.
-    
-    Args:
-        request: Configuration standardization request
-        
-    Returns:
-        Standardized configuration
-    """
-    try:
-        standardized_config = standardize_parameter_names(request.config)
-        return {
-            "status": "success",
-            "message": "Configuration parameters standardized successfully",
-            "config": standardized_config
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to standardize configuration: {str(e)}")
 
 
 @router.get("/health")

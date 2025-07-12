@@ -8,53 +8,13 @@ from application.shared.services.job_management_service import (
     JobPriority,
     JobInfo
 )
-from application.shared.helpers.error_handlers import (
-    handle_error_with_fallback,
-    create_success_response,
-)
-from domain.exceptions.global_exceptions import ConfigurationError
+
 from domain.models.api.job_monitoring_models import (
     JobProgressUpdateRequest,
-    JobCancelRequest,
+    JobCancelRequest, JobListResponse, JobStatusResponse, JobStatisticsResponse,
 )
 
 router = APIRouter(prefix="/jobs", tags=["Job Monitoring"])
-
-
-class JobListResponse(BaseModel):
-    """Response model for job list."""
-    jobs: List[Dict[str, Any]]
-    total_count: int
-    filtered_count: int
-
-
-class JobStatusResponse(BaseModel):
-    """Response model for job status."""
-    job_id: str
-    status: str
-    progress: float
-    created_at: str
-    started_at: Optional[str]
-    completed_at: Optional[str]
-    duration: Optional[float]
-    service_name: str
-    function_name: str
-    job_name: str
-    pipeline_job_id: Optional[str]
-    result: Optional[Dict[str, Any]]
-    error: Optional[str]
-    metadata: Optional[Dict[str, Any]]
-
-
-class JobStatisticsResponse(BaseModel):
-    """Response model for job statistics."""
-    total_jobs: int
-    running_jobs: int
-    max_workers: int
-    status_counts: Dict[str, int]
-    service_counts: Dict[str, int]
-    average_duration: float
-    completed_jobs: int
 
 
 @router.get("/", response_model=JobListResponse)

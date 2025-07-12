@@ -84,21 +84,21 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
         "context_size": parameters.context_size,
         "max_positions": parameters.max_positions,
         "max_bars": parameters.max_bars,
-        "max_bars_per_context": -1,
-        "max_contexts_per_file": -1,
-        "bar_token_mask": None,
-        "bar_token_idx": 2,
+        "max_bars_per_context": parameters.max_bars_per_context,
+        "max_contexts_per_file": parameters.max_contexts_per_file,
+        "bar_token_mask": parameters.bar_token_mask,
+        "bar_token_idx": parameters.bar_token_idx,
         "batch_size": parameters.batch_size,
         "num_workers": parameters.num_workers,
         "pin_memory": parameters.pin_memory,
-        "train_val_test_split": (0.7, 0.2, 0.1),
-        "load_latent": True,
-        "load_symb": True,
-        "load_emotions": True,
-        "load_global_features": False,
-        "load_text_prompts": False,
+        "train_val_test_split": parameters.train_val_test_split,
+        "load_latent": parameters.load_latent,
+        "load_symb": parameters.load_symb,
+        "load_emotions": parameters.load_emotions,
+        "load_global_features": parameters.load_global_features,
+        "load_text_prompts": parameters.load_text_prompts,
         "encode": parameters.encode,
-        "caption": False,
+        "caption": parameters.caption,
     }
 
     datamodule = DataloaderModule(**datamodule_parameters)
@@ -144,7 +144,7 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
         monitor="val_loss",
         save_last=True,
         save_top_k=parameters.save_top_k,
-        every_n_train_steps=1000,
+        every_n_train_steps=parameters.every_n_train_steps,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
 

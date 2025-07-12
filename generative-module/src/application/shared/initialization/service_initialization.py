@@ -11,14 +11,12 @@ from typing import Dict, Any
 from domain.interfaces import (
     get_dependency_container,
     ServiceScope,
-    IClassifierService,
     IEncoderService,
     IFeatureExtractionService,
     IGeneratorService,
     IMultimodalMappingService,
     IMusicBaseService,
     IDataloaderService,
-    IPseudoLabellerService,
     IConfigService,
     IJobManagementService,
     IPipelineConfigService,
@@ -26,14 +24,12 @@ from domain.interfaces import (
 from domain.interfaces.service_registry import get_enhanced_service_registry, ServiceStatus, CircuitBreakerConfig
 
 from application.shared.adapters import (
-    ClassifierServiceAdapter,
     EncoderServiceAdapter,
     FeatureExtractionServiceAdapter,
     GeneratorServiceAdapter,
     MultimodalMappingServiceAdapter,
     MusicBaseServiceAdapter,
     DataloaderServiceAdapter,
-    PseudoLabellerServiceAdapter,
     ConfigServiceAdapter,
     JobManagementServiceAdapter,
     PipelineConfigServiceAdapter,
@@ -44,14 +40,15 @@ logger = logging.getLogger(__name__)
 
 def initialize_services() -> None:
     """
-    Initialize all service adapters with dependency injection container and enhanced service registry.
+    Initialize all service adapters with unified service registry architecture.
     
     This function registers all service implementations with their interfaces
-    in both the dependency injection container and the enhanced service registry,
-    enabling automatic dependency resolution, service discovery, health monitoring,
+    in the enhanced service registry. The dependency injection container
+    automatically uses the enhanced registry via an adapter, providing
+    automatic dependency resolution, service discovery, health monitoring,
     and circuit breaker patterns.
     """
-    logger.info("Initializing services with dependency injection container and enhanced service registry...")
+    logger.info("Initializing services with unified service registry architecture...")
     
     container = get_dependency_container()
     enhanced_registry = get_enhanced_service_registry()
@@ -59,15 +56,6 @@ def initialize_services() -> None:
     try:
         # Define service configurations with health checks
         service_configs = [
-            {
-                "name": "config_service",
-                "interface": IConfigService,
-                "adapter": ConfigServiceAdapter,
-                "description": "Configuration management service",
-                "tags": {"core", "config"},
-                "health_check": lambda: _check_config_service_health(),
-                "circuit_breaker_config": CircuitBreakerConfig(failure_threshold=3, recovery_timeout=30)
-            },
             {
                 "name": "job_management_service",
                 "interface": IJobManagementService,
@@ -87,16 +75,6 @@ def initialize_services() -> None:
                 "dependencies": ["config_service"],
                 "health_check": lambda: _check_pipeline_config_service_health(),
                 "circuit_breaker_config": CircuitBreakerConfig(failure_threshold=3, recovery_timeout=30)
-            },
-            {
-                "name": "classifier_service",
-                "interface": IClassifierService,
-                "adapter": ClassifierServiceAdapter,
-                "description": "MIDI mood classification service",
-                "tags": {"ml", "classifier"},
-                "dependencies": ["config_service"],
-                "health_check": lambda: _check_classifier_service_health(),
-                "circuit_breaker_config": CircuitBreakerConfig(failure_threshold=5, recovery_timeout=120)
             },
             {
                 "name": "encoder_service",
@@ -158,27 +136,12 @@ def initialize_services() -> None:
                 "health_check": lambda: _check_dataloader_service_health(),
                 "circuit_breaker_config": CircuitBreakerConfig(failure_threshold=5, recovery_timeout=60)
             },
-            {
-                "name": "pseudo_labeller_service",
-                "interface": IPseudoLabellerService,
-                "adapter": PseudoLabellerServiceAdapter,
-                "description": "Pseudo labelling service",
-                "tags": {"ml", "labelling"},
-                "dependencies": ["config_service"],
-                "health_check": lambda: _check_pseudo_labeller_service_health(),
-                "circuit_breaker_config": CircuitBreakerConfig(failure_threshold=5, recovery_timeout=120)
-            },
+
         ]
         
-        # Register services in both container and enhanced registry
+        # Register services in enhanced registry
+        # Note: Dependency injection container automatically uses enhanced registry via adapter
         for config in service_configs:
-            # Register with dependency injection container
-            container.register(
-                config["interface"],
-                config["adapter"],
-                ServiceScope.SINGLETON
-            )
-            
             # Register with enhanced service registry
             enhanced_registry.register_service(
                 service_name=config["name"],
@@ -197,7 +160,7 @@ def initialize_services() -> None:
             
             logger.info(f"Registered service: {config['name']}")
         
-        logger.info("Successfully initialized all services with dependency injection container and enhanced service registry")
+        logger.info("Successfully initialized all services with unified service registry architecture")
         
         # Log service statistics
         stats = container.get_resolution_statistics()
@@ -249,14 +212,12 @@ def get_service_health_check() -> Dict[str, Any]:
                 "config_service": IConfigService,
                 "job_management_service": IJobManagementService,
                 "pipeline_config_service": IPipelineConfigService,
-                "classifier_service": IClassifierService,
                 "encoder_service": IEncoderService,
                 "feature_extraction_service": IFeatureExtractionService,
                 "generator_service": IGeneratorService,
                 "multimodal_mapping_service": IMultimodalMappingService,
                 "music_base_service": IMusicBaseService,
                 "dataloader_service": IDataloaderService,
-                "pseudo_labeller_service": IPseudoLabellerService,
             }
             
             if service_name in service_interfaces:
@@ -332,18 +293,6 @@ def get_registered_services() -> Dict[str, Any]:
     return services_info
 
 
-# Health check functions for enhanced service registry
-def _check_config_service_health() -> bool:
-    """Check if config service is healthy."""
-    try:
-        from application.shared.services.config_service import config_service
-        # Try to load a basic config to verify service is working
-        config_service.load_config("shared/config/config.json", validate=False)
-        return True
-    except Exception:
-        return False
-
-
 def _check_job_management_service_health() -> bool:
     """Check if job management service is healthy."""
     try:
@@ -361,17 +310,6 @@ def _check_pipeline_config_service_health() -> bool:
         from application.pipeline_config.services.pipeline_config_service import pipeline_config_service
         # Check if the service can create a basic config
         pipeline_config_service.create_base_config()
-        return True
-    except Exception:
-        return False
-
-
-def _check_classifier_service_health() -> bool:
-    """Check if classifier service is healthy."""
-    try:
-        from application.classifier.services.classifier_service import get_model_config_path
-        # Check if the service can access its configuration
-        get_model_config_path("ReMIDICaps", "mood", "remi")
         return True
     except Exception:
         return False
@@ -441,14 +379,3 @@ def _check_dataloader_service_health() -> bool:
         return True
     except Exception:
         return False
-
-
-def _check_pseudo_labeller_service_health() -> bool:
-    """Check if pseudo labeller service is healthy."""
-    try:
-        from application.psuedo_labeller.services.pseudo_labeller_service import pseudo_labeller_service
-        # Check if the service can initialize
-        pseudo_labeller_service.initialize_model({})
-        return True
-    except Exception:
-        return False 

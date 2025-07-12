@@ -115,22 +115,6 @@ class ServiceRegistration:
     last_accessed: Optional[datetime] = None
 
 
-class ServiceDiscovery:
-    """Service discovery interface."""
-    
-    def find_services_by_type(self, service_type: Type) -> List[ServiceRegistration]:
-        """Find services by type."""
-        pass
-    
-    def find_services_by_tag(self, tag: str) -> List[ServiceRegistration]:
-        """Find services by tag."""
-        pass
-    
-    def find_healthy_services(self) -> List[ServiceRegistration]:
-        """Find all healthy services."""
-        pass
-
-
 class EnhancedServiceRegistry:
     """
     Enhanced service registry with comprehensive service management capabilities.
@@ -604,7 +588,7 @@ def get_enhanced_service_registry() -> EnhancedServiceRegistry:
 
 # Backward compatibility - keep existing simple registry
 @dataclass
-class ServiceRegistration:
+class SimpleServiceRegistration:
     """Simple service registration for backward compatibility."""
     service_type: Type
     implementation: Optional[Any] = None
@@ -618,7 +602,7 @@ class ServiceRegistry:
     """Simple service registry for backward compatibility."""
     
     def __init__(self):
-        self._services: Dict[str, ServiceRegistration] = {}
+        self._services: Dict[str, SimpleServiceRegistration] = {}
         self._instances: Dict[str, Any] = {}
         self._lock = threading.RLock()
     
@@ -626,7 +610,7 @@ class ServiceRegistry:
                 factory: Optional[Callable] = None, scope: ServiceScope = ServiceScope.SINGLETON) -> None:
         """Register a service."""
         with self._lock:
-            self._services[service_name] = ServiceRegistration(
+            self._services[service_name] = SimpleServiceRegistration(
                 service_type=service_type,
                 implementation=implementation,
                 factory=factory,

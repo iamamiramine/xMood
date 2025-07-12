@@ -231,11 +231,6 @@ async def encode_dataset(parameters: EncodeDatasetParameters) -> dict:
             encode_midi(
                 EncodeParameters(
                     midi=file_path,
-                    alpha=parameters.alpha,
-                    beta=parameters.beta,
-                    gamma=parameters.gamma,
-                    c=parameters.c,
-                    w=parameters.w,
                     save=parameters.save,
                     encodings_out_dir=processed_dir,
                     dataset_key=dataset_key,

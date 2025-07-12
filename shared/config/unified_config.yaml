@@ -13,6 +13,19 @@ global:
   checkpoints_root: checkpoints/
   logs_root: logs/
 
+paths:
+  ROOT_OUTPUT: output
+  DATASETS_PATH: datasets
+  DATASET_NAME: ReMIDICaps
+
+midi:
+  pos_per_quarter: 12
+  resolution: 480
+  max_bar_length: 3
+  max_bars: 512
+  pad_idx: 338
+  feature_path: output/demos/demo_2/processed/ReMIDICaps_tokenized/
+
 data:
   dataset_name: ReMIDICaps
   context_size: 512
@@ -62,97 +75,127 @@ classifier:
     max_bar_length: 3
 
 generator:
-  # Standardized parameter names
-  d_model: 512
-  context_size: 512
-  batch_size: 32
-  num_attention_heads: 8
-  # Generator-specific parameters
-  d_latent: 1024
-  max_bars: 512
-  max_positions: 2048
-  encoder_layers: 6
-  decoder_layers: 8
-  intermediate_size: 2048
-  vocab_size: 1382
-  lr: 0.0001
-  lr_schedule: sqrt_decay
-  warmup_steps: 4000
-  max_steps: 1000000000
-  dropout: 0.1
-  # Training configuration
-  training_name: generator_demo_2
-  load_from_checkpoint: false
-  checkpoint_path: output/demos/demo_2/checkpoints/ReMIDICaps/generator_demo_2/checkpoints/Generator_MIDICaps_Symbolic_Latent_Epoch_35.ckpt
-  load_weights: true
-  weights_path: output/demos/demo_2/checkpoints/ReMIDICaps/generator_demo_2/checkpoints/weights/Generator_MIDICaps_Symbolic_Latent_Epoch_35_weights.pt
-  config_path: output/demos/demo_2/checkpoints/ReMIDICaps/generator_demo_2/checkpoints/weights/Generator_MIDICaps_Symbolic_Latent_Epoch_35_config.json
-  epochs: 50
-  max_training_steps: 1000000000
-  # Generation configuration
-  generate:
+  # Function-specific configurations
+  train:
+    d_model: 512
+    context_size: 512
+    batch_size: 32
+    num_attention_heads: 8
+    d_latent: 128
     max_bars: 16
-    max_n_tokens: 1024
-    initial_context: 256
+    max_positions: 512
+    encoder_layers: 6
+    decoder_layers: 6
+    intermediate_size: 2048
+    vocab_size: 1382
+    dropout: 0.1
+    lr: 0.0001
+    lr_schedule: "sqrt_decay"
+    warmup_steps: 4000
+    max_steps: 100000
+    max_epochs: 100
+    weight_decay: 0.0001
+    gpus: 1
+    accumulate_grad_batches: 1
+    val_check_interval: 1000
+    log_every_n_steps: 50
+    save_top_k: 2
+    limit_val_batches: 64
+    num_sanity_val_steps: 2
+    dataset_name: "ReMIDICaps"
+    num_workers: 4
+    pin_memory: true
+    encode: false
+    device: "cuda"
+    checkpoint_dir: "output/checkpoints/generator"
+    load_from_checkpoint: false
+    checkpoint_path: null
+    weights_path: null
+    config_path: null
+  
+  generate_from_midi:
+    device: "cuda"
+    latent_midi: "path/to/latent.mid"
+    symbolic_midi: "path/to/symbolic.mid"
+    emotions_midi: "path/to/emotions.mid"
+    output_folder: "output/generated"
+    output_name: "generated_sample"
+    load_from_checkpoint: false
+    load_weights: true
+    checkpoint_path: "output/checkpoints/generator/best.ckpt"
+    weights_path: "output/checkpoints/generator/weights.pt"
+    config_path: "output/checkpoints/generator/config.json"
     context_size: 256
-    prompt_name: generated_sample
-    file: 0a0a52a35fa8a6384ef810e82d5ba53c.mid_processed.pkl
-    output_folder: generated_samples
+    max_bars: 16
+    max_positions: 512
+    max_n_tokens: 1024
+    temperature: 0.8
+    initial_context: 256
 
 multimodal_mapping:
-  # Standardized parameter names
-  d_model: 512
-  context_size: 512
-  batch_size: 32
-  num_attention_heads: 8
-  # Multimodal-specific parameters
-  image_dim: 384
-  text_dim: 384
-  global_feature_dim: 371
-  global_feature_out_dim: 256
-  mood_dim: 12
-  mood_out_dim: 128
-  fusion_dim: 512
-  latent_dim: 128
-  output_dim: 256
-  num_layers: 4
-  fusion_heads: 8
-  fusion_type: linear_concat
-  dropout: 0.1
-  # Training configuration
-  training_name: multimodal_mapper
-  lr: 0.00005
-  lr_schedule: cosine
-  warmup_steps: 2000
-  max_steps: 100000
-  epochs: 100
-  val_check_interval: 500
-  log_every_n_steps: 100
-  checkpoint_every_n_steps: 2000
-  # KL annealing
-  use_kl_annealing: true
-  kl_start: 0.0
-  kl_end: 1.0
-  kl_anneal_steps: 10000
-  # Feature dimensions
-  feature_dimensions:
-    numeric_features: 4
-    time_signatures: 6
-    key_signatures: 24
-    instruments: 129
-    chords: 28
-    total_global_features: 191
-  # Checkpoint configuration
-  load_from_checkpoint: false
-  weights_path: ''
-  config_path: ''
-  max_training_steps: 100000
-  # Generation configuration
-  generation:
+  # Function-specific configurations
+  train:
+    load_from_checkpoint: false
+    checkpoint_path: null
+    weights_path: null
+    config_path: null
+    image_dim: 384
+    text_dim: 384
+    global_feature_dim: 64
+    global_feature_out_dim: 128
+    mood_dim: 32
+    mood_out_dim: 128
+    fusion_dim: 512
+    d_model: 512
+    latent_dim: 128
+    output_dim: 256
+    context_size: 512
+    num_layers: 4
+    num_heads: 8
+    fusion_heads: 8
+    fusion_type: "linear_concat"
+    dropout: 0.1
+    training: true
+    image_dropout_rate: 0.2
+    text_dropout_rate: 0.2
+    global_feature_dropout_rate: 0.2
+    mood_dropout_rate: 0.2
+    lr: 0.00005
+    lr_schedule: "cosine"
+    warmup_steps: 2000
+    max_steps: 100000
+    use_kl_annealing: true
+    kl_start: 0.0
+    kl_end: 1.0
+    kl_anneal_steps: 10000
+    batch_size: 32
+    max_epochs: 100
+    gpus: 1
+    accumulate_grad_batches: 1
+    dataset_name: "ReMIDICaps"
+    load_latent: true
+    load_symb: true
+    load_emotions: true
+    load_global_features: true
+    load_text_prompts: true
+    load_images: true
+    device: "cuda"
+    num_workers: 4
+    pin_memory: true
+    checkpoint_dir: "output/checkpoints/multimodal_mapping"
+    log_every_n_steps: 50
+    val_check_interval: 1000
+    save_top_k: 2
+    limit_val_batches: 64
+    num_sanity_val_steps: 2
+  
+  generate_representations:
+    output_folder: "output/multimodal_features"
+    output_name: "multimodal_features"
+    weights_path: "output/checkpoints/multimodal_mapping/weights.pt"
+    config_path: "output/checkpoints/multimodal_mapping/config.json"
     num_bars: 8
     temperature: 1.0
-    output_folder: multimodal_features
-    output_name: multimodal_features
 
 vae:
   # Standardized parameter names
@@ -224,16 +267,204 @@ projector:
     output_folder: generated_features
 
 encoder:
-  # Standardized parameter names
-  d_model: 512
-  context_size: 512
-  batch_size: 10
-  # Encoder-specific parameters
-  alpha: 0.016
-  beta: 0.3
-  gamma: 0.4
-  c: 12
-  w: 4
+  # Function-specific configurations
+  encode_midi:
+    midi: "path/to/input.mid"
+    save: true
+    encodings_out_dir: "output/encodings"
+    dataset_key: null
+  
+  encode_dataset:
+    dataset_name: "ReMIDICaps"
+    batch_size: 32
+    num_workers: 4
+    max_files: null
+    resume_from: null
+    save: true
+    encodings_out_dir: "output/encodings"
+    overwrite_existing: false
+    device: "cuda"
+    validate_output: true
+    skip_invalid: true
+  
+  tokenize_remi_dataset:
+    dataset_name: "ReMIDICaps"
+    context_size: 256
+    max_positions: 2048
+    max_bars: 512
+    max_bars_per_context: -1
+    max_contexts_per_file: -1
+    bar_token_mask: null
+    bar_token_idx: 2
+    batch_size: 32
+    num_workers: 4
+    max_files: null
+    resume_from: null
+    save: true
+    tokens_out_dir: "output/tokens"
+    overwrite_existing: false
+    vocab_path: null
+    create_vocab: true
+    device: "cuda"
+    validate_output: true
+    skip_invalid: true
+
+feature_extraction:
+  # Function-specific configurations
+  extract_symbolic_features:
+    midi: "path/to/input.mid"
+    processed_dir: null
+    save: true
+    level: "piece"
+    add_position_tokens: false
+  
+  extract_symbolic_features_dataset:
+    dataset_name: "ReMIDICaps"
+    level: "bar"
+    add_position_tokens: false
+    omit_time_sig: false
+    omit_instruments: false
+    omit_chords: false
+    omit_meta: false
+    batch_size: 32
+    num_workers: 4
+    max_files: null
+    resume_from: null
+    processed_dir: null
+    save: true
+    output_dir: "output/symbolic_features"
+    overwrite_existing: false
+    device: "cuda"
+    validate_output: true
+    skip_invalid: true
+  
+  train_vae:
+    d_model: 512
+    context_size: 512
+    batch_size: 32
+    num_attention_heads: 8
+    n_codes: 256
+    n_groups: 4
+    d_latent: 128
+    encoder_layers: 6
+    decoder_layers: 6
+    encoder_ffn_dim: 2048
+    decoder_ffn_dim: 2048
+    dropout: 0.1
+    lr: 0.0001
+    lr_schedule: "sqrt_decay"
+    warmup_steps: 4000
+    max_steps: 100000
+    max_epochs: 100
+    weight_decay: 0.0001
+    windowed_attention_pr: 0.0
+    max_lookahead: 4
+    disable_vq: false
+    beta: 0.02
+    cycle_length: 2000
+    decay: 0.99
+    eps: 0.00001
+    restart_threshold: 1.0
+    gpus: 1
+    accumulate_grad_batches: 1
+    val_check_interval: 1000
+    log_every_n_steps: 50
+    save_top_k: 2
+    limit_val_batches: 64
+    num_sanity_val_steps: 2
+    dataset_name: "ReMIDICaps"
+    num_workers: 4
+    pin_memory: true
+    load_latent: false
+    load_symb: false
+    device: "cuda"
+    checkpoint_dir: "output/checkpoints/vae"
+    load_from_checkpoint: false
+    checkpoint_path: null
+    weights_path: null
+    config_path: null
+  
+  generate_latent_representations:
+    checkpoint_path: "output/checkpoints/vae/best.ckpt"
+    dataset_name: "ReMIDICaps"
+    context_size: -1
+    batch_size: 32
+    num_workers: 4
+    pin_memory: true
+    encode: false
+    load_latent: false
+    load_symb: false
+    device: "cuda"
+    output_dir: "output/latent_representations"
+    save_latents: true
+    save_codes: true
+    max_files: null
+    resume_from: null
+
+music_base:
+  # Function-specific configurations
+  extract_chords:
+    midi: "path/to/input.mid"
+    save: true
+    out_dir: "output/chords"
+    api_call: false
+  
+  synthesize_midi:
+    midi: "path/to/input.mid"
+    save: true
+    out_dir: "output/synthesized"
+    api_call: false
+
+dataloader:
+  # Function-specific configurations
+  initialize_module:
+    dataset_name: "ReMIDICaps"
+    context_size: 256
+    max_positions: 2048
+    max_bars: 512
+    max_bars_per_context: -1
+    max_contexts_per_file: -1
+    bar_token_mask: null
+    bar_token_idx: 2
+    batch_size: 32
+    num_workers: 2
+    pin_memory: true
+    train_val_test_split: [0.7, 0.2, 0.1]
+    load_latent: true
+    load_symb: true
+    load_emotions: true
+    load_global_features: false
+    load_text_prompts: false
+    encode: false
+    caption: false
+  
+  load_dataset:
+    dataset_name: "ReMIDICaps"
+    stage: "fit"
+    load_latent: true
+    load_symb: true
+    load_emotions: true
+    load_global_features: false
+    load_text_prompts: false
+    batch_size: 32
+    num_workers: 2
+    pin_memory: true
+    output_dir: null
+    save_processed: false
+  
+  process_files:
+    dataset_name: "ReMIDICaps"
+    context_size: 256
+    max_positions: 2048
+    max_bars: 512
+    max_bars_per_context: -1
+    max_contexts_per_file: -1
+    bar_token_mask: null
+    bar_token_idx: 2
+    batch_size: 32
+    num_workers: 2
+    pin_memory: true
+    train_val_test_split: [0.7, 0.2, 0.1]
 
 training:
   # Global training parameters

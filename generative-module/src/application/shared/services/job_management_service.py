@@ -11,7 +11,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, Future
 import logging
 
-from domain.exceptions.global_exceptions import ConfigurationError
+from domain.exceptions.global_exceptions import ConfigurationException
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

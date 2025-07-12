@@ -5,11 +5,11 @@ from datetime import datetime
 from application.pipeline_job.services.pipeline_job_service import pipeline_job_service
 from application.shared.services.job_management_service import JobPriority
 from application.shared.helpers import enum_helpers
-from application.shared.helpers.error_handlers import (
+from handlers.exception_handler import (
     handle_error_with_fallback,
     create_success_response,
 )
-from domain.exceptions.global_exceptions import ConfigurationError
+from domain.exceptions.global_exceptions import ConfigurationException
 from domain.models.api.pipeline_job_models import (
     RunServiceRequest,
     RunPipelineRequest,
@@ -117,7 +117,7 @@ async def execute_service_with_parameters(
             "job_priority": request.job_priority
         }
         
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -163,7 +163,7 @@ async def run_pipeline(
             "job_priority": request.job_priority
         }
         
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -190,7 +190,7 @@ async def get_pipeline_status(pipeline_job_id: str) -> Dict[str, Any]:
             "pipeline_status": status
         }
         
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get pipeline status: {str(e)}")
@@ -216,7 +216,7 @@ async def cancel_pipeline(pipeline_job_id: str) -> Dict[str, Any]:
             "cancellation_result": result
         }
         
-    except ConfigurationError as e:
+    except ConfigurationException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to cancel pipeline: {str(e)}")
@@ -388,14 +388,12 @@ async def get_example_pipeline_definitions() -> Dict[str, Any]:
                 {"service": "feature_extraction", "function": "generate_latent_representations", "dependencies": ["feature_extraction"]},
                 {"service": "multimodal_mapping", "function": "train", "dependencies": ["feature_extraction"]},
                 {"service": "generator", "function": "train", "dependencies": ["multimodal_mapping"]},
-                {"service": "classifier", "function": "train", "dependencies": ["feature_extraction"]}
             ],
             "inference_pipeline": [
                 {"service": "encoder", "function": "encode_dataset", "dependencies": []},
                 {"service": "feature_extraction", "function": "extract_symbolic_features", "dependencies": ["encoder"]},
                 {"service": "multimodal_mapping", "function": "generate_representations", "dependencies": ["feature_extraction"]},
                 {"service": "generator", "function": "generate_from_midi", "dependencies": ["multimodal_mapping"]},
-                {"service": "classifier", "function": "predict_mood", "dependencies": ["feature_extraction"]}
             ],
             "preprocessing_pipeline": [
                 {"service": "encoder", "function": "encode_dataset", "dependencies": []},
@@ -434,7 +432,7 @@ async def get_getting_started_tutorial() -> Dict[str, Any]:
                     "description": "Create a unique pipeline configuration for your job",
                     "endpoint": "POST /pipeline-config/generate",
                     "example": {
-                        "services": ["encoder", "feature_extraction", "classifier"],
+                        "services": ["encoder", "feature_extraction"],
                         "environment": "development",
                         "job_name": "my_first_pipeline"
                     }

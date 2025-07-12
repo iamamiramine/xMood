@@ -32,6 +32,7 @@ from application.dataloader.models.dataloader_model import DataloaderModule
 from application.feature_extraction.helpers.latent_features_helper import (
     load_vae_from_checkpoint,
 )
+from application.feature_extraction.models.vae_model import VqVaeModule
 from domain.models.feature_extraction.feature_extraction_model import (
     SymbolicFeaturesParameters,
     SymbolicFeaturesDatasetParameters,
@@ -236,23 +237,23 @@ def train_vae(parameters: VaeTrainingParameters) -> dict:
     datamodule_parameters = {
         "dataset_name": parameters.dataset_name,
         "context_size": parameters.context_size,
-        "max_positions": parameters.max_positions if hasattr(parameters, 'max_positions') else 1024,
-        "max_bars": parameters.max_bars if hasattr(parameters, 'max_bars') else 512,
-        "max_bars_per_context": -1,
-        "max_contexts_per_file": -1,
-        "bar_token_mask": None,
-        "bar_token_idx": 2,
+        "max_positions": parameters.max_positions,
+        "max_bars": parameters.max_bars,
+        "max_bars_per_context": parameters.max_bars_per_context,
+        "max_contexts_per_file": parameters.max_contexts_per_file,
+        "bar_token_mask": parameters.bar_token_mask,
+        "bar_token_idx": parameters.bar_token_idx,
         "batch_size": parameters.batch_size,
         "num_workers": parameters.num_workers,
         "pin_memory": parameters.pin_memory,
-        "train_val_test_split": (0.7, 0.2, 0.1),
+        "train_val_test_split": parameters.train_val_test_split,
         "load_latent": parameters.load_latent,
         "load_symb": parameters.load_symb,
-        "load_emotions": False,
-        "load_global_features": False,
-        "load_text_prompts": False,
-        "encode": False,
-        "caption": False,
+        "load_emotions": parameters.load_emotions,
+        "load_global_features": parameters.load_global_features,
+        "load_text_prompts": parameters.load_text_prompts,
+        "encode": parameters.encode,
+        "caption": parameters.caption,
     }
 
     datamodule = DataloaderModule(**datamodule_parameters)
@@ -282,12 +283,12 @@ def train_vae(parameters: VaeTrainingParameters) -> dict:
             "max_lookahead": parameters.max_lookahead,
             "disable_vq": parameters.disable_vq,
             "accumulate_grad_batches": accumulate_grad_batches,
-            "max_positions": parameters.max_positions if hasattr(parameters, 'max_positions') else 1024,
-            "automatic_optimization": False,
+            "max_positions": parameters.max_positions,
+            "automatic_optimization": parameters.automatic_optimization,
             "beta": parameters.beta,
             "cycle_length": parameters.cycle_length,
-            "position_embedding_type": "relative_key_query",
-            "num_attention_heads": parameters.num_attention_heads if hasattr(parameters, 'num_attention_heads') else 8,
+            "position_embedding_type": parameters.position_embedding_type,
+            "num_attention_heads": parameters.num_attention_heads,
             "decay": parameters.decay,
             "eps": parameters.eps,
             "restart_threshold": parameters.restart_threshold,
@@ -307,7 +308,7 @@ def train_vae(parameters: VaeTrainingParameters) -> dict:
         filename="{step}-{val_loss:.2f}",
         save_last=True,
         save_top_k=parameters.save_top_k,
-        every_n_train_steps=100,
+        every_n_train_steps=parameters.every_n_train_steps,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
@@ -341,23 +342,23 @@ async def generate_latent_representations_dataset(parameters: LatentRepresentati
     datamodule_parameters = {
         "dataset_name": parameters.dataset_name,
         "context_size": parameters.context_size,
-        "max_positions": 1024,
-        "max_bars": 512,
-        "max_bars_per_context": -1,
-        "max_contexts_per_file": -1,
-        "bar_token_mask": None,
-        "bar_token_idx": 2,
+        "max_positions": parameters.max_positions,
+        "max_bars": parameters.max_bars,
+        "max_bars_per_context": parameters.max_bars_per_context,
+        "max_contexts_per_file": parameters.max_contexts_per_file,
+        "bar_token_mask": parameters.bar_token_mask,
+        "bar_token_idx": parameters.bar_token_idx,
         "batch_size": parameters.batch_size,
         "num_workers": parameters.num_workers,
         "pin_memory": parameters.pin_memory,
-        "train_val_test_split": (0.7, 0.2, 0.1),
+        "train_val_test_split": parameters.train_val_test_split,
         "load_latent": parameters.load_latent,
         "load_symb": parameters.load_symb,
-        "load_emotions": False,
-        "load_global_features": False,
-        "load_text_prompts": False,
+        "load_emotions": parameters.load_emotions,
+        "load_global_features": parameters.load_global_features,
+        "load_text_prompts": parameters.load_text_prompts,
         "encode": parameters.encode,
-        "caption": False,
+        "caption": parameters.caption,
     }
 
     datamodule = DataloaderModule(**datamodule_parameters)
@@ -378,20 +379,20 @@ async def generate_latent_representations_dataset(parameters: LatentRepresentati
         dirpath=parameters.output_dir,
         filename="{step}-{valid_loss:.2f}",
         save_last=True,
-        save_top_k=2,
-        every_n_train_steps=100,
+        save_top_k=parameters.save_top_k,
+        every_n_train_steps=parameters.every_n_train_steps,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     trainer = L.Trainer(
-        max_steps=1000,
+        max_steps=parameters.max_steps,
         accelerator="gpu" if device_count > 0 else "cpu",
         devices=min(device_count, 1) if device_count > 0 else "auto",
         accumulate_grad_batches=accumulate_grad_batches,
-        val_check_interval=100,
-        log_every_n_steps=10,
-        limit_val_batches=64,
-        num_sanity_val_steps=2,
+        val_check_interval=parameters.val_check_interval,
+        log_every_n_steps=parameters.log_every_n_steps,
+        limit_val_batches=parameters.limit_val_batches,
+        num_sanity_val_steps=parameters.num_sanity_val_steps,
         callbacks=[checkpoint_callback, lr_monitor],
     )
 

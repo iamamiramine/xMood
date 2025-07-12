@@ -183,38 +183,6 @@ def get_all_major_minor_keys():
     return candidate_keys
 
 
-# Function to create the V and I chords for major and minor keys
-def get_chords(root, scale_type):
-    """
-    Create the chords for major and minor keys, including primary and secondary chords.
-
-    Args:
-        root: Root note of the key
-        scale_type: Either "major" or "minor"
-
-    Returns:
-        dict: Dictionary containing primary and secondary chords:
-            For major keys: I, IV, iv, V, vi
-            For minor keys: i, iv, IV, V, VI
-
-    Raises:
-        ValueError: If scale_type is not "major" or "minor"
-    """
-    if root == "N":
-        return {"N": "N:N"}  # Handle no-chord case
-
-    major_scales, minor_scales = get_major_minor_scales()
-
-    if scale_type == "major":
-        scale = major_scales[root]
-        return {"I": f"{root}:maj", "IV": f"{scale[3]}:maj", "iv": f"{scale[3]}:min", "V": f"{scale[4]}:dom7", "vi": f"{scale[5]}:min"}
-    elif scale_type == "minor":
-        scale = minor_scales[root]
-        return {"i": f"{root}:min", "iv": f"{scale[3]}:min", "IV": f"{scale[3]}:maj", "V": f"{scale[4]}:dom7", "VI": f"{scale[5]}:maj"}
-    else:
-        raise ValueError(f"Invalid scale type: {scale_type}")
-
-
 def key_index():
     """
     Generate a list of all possible keys in format 'pitch:scale_type'.

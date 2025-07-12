@@ -10,11 +10,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 
-from domain.models.classifier.classifier_model import (
-    PredictMoodParameters,
-    TrainingParameters,
-    BatchPredictParameters,
-)
 from domain.models.encoder.encoder_model import (
     EncodeParameters,
     EncodeDatasetParameters,
@@ -40,31 +35,8 @@ from domain.models.dataloader.dataloader_model import (
     DatasetLoadParameters,
     DataloaderParameters,
 )
-from domain.models.pseudo_labeller.pseudo_labeller_model import (
-    PseudoLabellerParameters,
-    ImageMoodClassificationParameters,
-    BatchImageMoodClassificationParameters,
-)
 from application.shared.services.job_management_service import JobPriority, JobStatus
 
-
-class IClassifierService(ABC):
-    """Interface for classifier service operations."""
-    
-    @abstractmethod
-    def predict(self, midi_path: str, model_type: str, task: str, device: str, parameters: PredictMoodParameters) -> Dict[str, Any]:
-        """Predict mood for a MIDI file."""
-        pass
-    
-    @abstractmethod
-    def predict_batch_sync(self, parameters: BatchPredictParameters) -> Dict[str, Any]:
-        """Batch predict mood for multiple MIDI files."""
-        pass
-    
-    @abstractmethod
-    def train(self, parameters: TrainingParameters) -> Dict[str, Any]:
-        """Train a classifier model."""
-        pass
 
 
 class IEncoderService(ABC):
@@ -173,25 +145,6 @@ class IDataloaderService(ABC):
     @abstractmethod
     def process_dataset_files(self, parameters: DataloaderParameters) -> Dict[str, Any]:
         """Process dataset files."""
-        pass
-
-
-class IPseudoLabellerService(ABC):
-    """Interface for pseudo labeller service operations."""
-    
-    @abstractmethod
-    def create_mood_labels(self, parameters: PseudoLabellerParameters) -> Dict[str, Any]:
-        """Create mood labels."""
-        pass
-    
-    @abstractmethod
-    def classify_image_mood(self, parameters: ImageMoodClassificationParameters) -> Dict[str, Any]:
-        """Classify image mood."""
-        pass
-    
-    @abstractmethod
-    def batch_classify_images(self, parameters: BatchImageMoodClassificationParameters) -> Dict[str, Any]:
-        """Batch classify image moods."""
         pass
 
 

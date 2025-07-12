@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 
 class MusicBaseParameters(BaseModel):
+    """Parameters for music base service - lightweight API model"""
+    
     midi: Annotated[str, Query(description="Input MIDI file")]
     save: Annotated[bool, Query(description="Save the output file")] = False
     out_dir: Annotated[str, Query(description="Output directory for the encoded MIDI file")] = None

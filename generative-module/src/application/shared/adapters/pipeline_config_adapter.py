@@ -90,25 +90,3 @@ class PipelineConfigServiceAdapter(IPipelineConfigService):
         except Exception as e:
             logger.error(f"Error updating pipeline status for {pipeline_job_id}: {e}")
             return False
-    
-    def validate_pipeline_config(self, config: Dict[str, Any]) -> bool:
-        """
-        Validate pipeline configuration.
-        
-        Args:
-            config: Configuration to validate
-            
-        Returns:
-            True if valid, False otherwise
-        """
-        try:
-            # Use the validation logic from the original service
-            # This is a simplified validation - could be enhanced
-            required_fields = ["pipeline_metadata", "services"]
-            for field in required_fields:
-                if field not in config:
-                    return False
-            return True
-        except Exception as e:
-            logger.error(f"Error validating pipeline config: {e}")
-            return False 
