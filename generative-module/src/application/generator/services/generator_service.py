@@ -1,11 +1,5 @@
 import os
-import pickle
 import json
-import glob
-import tempfile
-import shutil
-import asyncio
-from typing import Dict, Any, Union
 
 import pandas as pd
 from tqdm import tqdm
@@ -13,16 +7,16 @@ import copy
 
 import torch
 import torch.multiprocessing
-from application.dataloader.helper.dataloader_helper import represent_encoding
-from application.encoder.helpers.remi_helper import remi2midi
+from core.dataloader.helpers.dataloader_helper import represent_encoding
+from application.symbolic.helpers.remi_helper import remi2midi
 
 from application.generator.models.generator_model import MIDIGeneratorModule
-from domain.models.generator_model import GenerateFromMIDIParameters, GeneratorTrainingParameters
+from domain.models.generator.generator_model import GenerateFromMIDIParameters, GeneratorTrainingParameters
 
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, Callback
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
-from application.dataloader.models.dataloader_model import (
+from core.dataloader.models.dataloader_model import (
     DataloaderModule,
 )
 from application.generator.helper.generator_helpers import (
@@ -31,14 +25,11 @@ from application.generator.helper.generator_helpers import (
 )
 
 from domain.constants.paths_constants import (
-    CHECKPOINTS_PATH,
     GENERATED_PATH,
     PROCESSED_PATH,
     LATENTS_PATH,
-    MIDI_PATH,
 )
-from domain.constants.model_constants import ModelConstants
-from persistence.dataloader.repositories.dataloader_repository import async_load, CPU_Unpickler, save_async
+from core.dataloader.helpers.dataloader_helper import async_load, load_latents_hdf5
 
 
 class WeightsOnlyCheckpoint(ModelCheckpoint):
@@ -92,13 +83,6 @@ def train_generator(parameters: GeneratorTrainingParameters) -> dict:
         "num_workers": parameters.num_workers,
         "pin_memory": parameters.pin_memory,
         "train_val_test_split": parameters.train_val_test_split,
-        "load_latent": parameters.load_latent,
-        "load_symb": parameters.load_symb,
-        "load_emotions": parameters.load_emotions,
-        "load_global_features": parameters.load_global_features,
-        "load_text_prompts": parameters.load_text_prompts,
-        "encode": parameters.encode,
-        "caption": parameters.caption,
     }
 
     datamodule = DataloaderModule(**datamodule_parameters)
@@ -190,18 +174,16 @@ def generate_from_midi(parameters: GenerateFromMIDIParameters, model=None) -> di
     latents_path = os.path.join(
         str(LATENTS_PATH),
         "ReMIDICaps",
-        f"{os.path.basename(parameters.latent_midi)}_latents.pkl",
+        f"{os.path.basename(parameters.latent_midi)}_latents.h5",
     )
-    latents_file = CPU_Unpickler(open(latents_path, "rb")).load()
+    latents_file = load_latents_hdf5(latents_path)
 
-    # Load symbolic and emotions data
+    # Load symbolic data
     symbolic_data = async_load(processed_dir, parameters.symbolic_midi, "processed")
-    # emotions_data = async_load(processed_dir, parameters.emotions_midi, "processed")
 
     # Prepare batch for inference
     latent_rep = represent_encoding(
         parameters.latent_midi,
-        "",
         parameters.context_size,
         parameters.max_bars,
         parameters.max_positions,
@@ -218,7 +200,6 @@ def generate_from_midi(parameters: GenerateFromMIDIParameters, model=None) -> di
 
     symb_rep = represent_encoding(
         parameters.symbolic_midi,
-        "",
         parameters.context_size,
         parameters.max_bars,
         parameters.max_positions,

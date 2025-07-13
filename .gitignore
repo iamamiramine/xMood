@@ -163,10 +163,6 @@ cython_debug/
 # Conda temp
 .condatmp/
 
-# SGAN specific folders
+# specific folders
 datasets/
 output/
-test_scripts/
-shared/huggingface
-dataset_proc/
-new_dataset/

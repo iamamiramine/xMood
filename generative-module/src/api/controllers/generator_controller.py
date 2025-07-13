@@ -6,7 +6,7 @@ from application.generator.services.generator_service import (
     batch_generate_from_dataset as _batch_generate_from_dataset,
     save_checkpoint_separate as _save_checkpoint_separate,
 )
-from domain.models.generator_model import GenerateFromMIDIParameters, GeneratorTrainingParameters
+from domain.models.generator.generator_model import GenerateFromMIDIParameters, GeneratorTrainingParameters
 
 router = APIRouter()
 

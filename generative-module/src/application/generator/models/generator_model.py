@@ -7,8 +7,8 @@ import math
 
 from transformers import BertConfig, EncoderDecoderConfig, EncoderDecoderModel
 
-from application.encoder.models.vocab_model import RemiVocab, SymbolicFeaturesVocab, EmotionVocab
-from domain.constants.encoder.token_constants import PAD_TOKEN, EOS_TOKEN, BAR_KEY, POSITION_KEY, BOS_TOKEN
+from core.symbolic.models.vocab_model import RemiVocab, SymbolicFeaturesVocab
+from domain.constants.token_constants import PAD_TOKEN, EOS_TOKEN, BAR_KEY, POSITION_KEY, BOS_TOKEN
 from domain.constants.model_constants import ModelConstants
 
 
@@ -63,7 +63,6 @@ class MIDIGeneratorModule(pl.LightningModule):
 
         self.vocab = RemiVocab()
         self.symb_vocab = SymbolicFeaturesVocab()
-        self.emotion_vocab = EmotionVocab()
 
         encoder_config = BertConfig(
             vocab_size=1, # should be 1
@@ -97,7 +96,6 @@ class MIDIGeneratorModule(pl.LightningModule):
 
         self.latent_in = nn.Linear(self.d_latent, self.d_model, bias=False)
         self.symb_in = nn.Embedding(len(self.symb_vocab), self.d_model)
-        self.emotion_in = nn.Embedding(len(self.emotion_vocab), self.d_model)
 
         self.symb_proj = nn.Linear(2 * self.d_model, self.d_model, bias=False)
 
@@ -323,7 +321,7 @@ class MIDIGeneratorModule(pl.LightningModule):
 
         is_done = torch.zeros(batch_size, dtype=torch.bool).to(self._device)
 
-        # Precompute encoder hidden states for cross-attention
+        # Precompute symbolic hidden states for cross-attention
         encoder_hidden_states = None
         if batch is not None:
             if batch.get("latents") is not None and batch.get("bar_symbolic") is None:
